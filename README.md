@@ -62,6 +62,12 @@ This is the rule the router follows (`pick3d` and `pickMotion` in `route.mjs`):
 | Overtime kiosk (ardenot) | Opened as a link. Code changes go to the Coder | Nothing. The hub never sends kiosk data to an outside model |
 | Meshy | Called directly: generate, retexture, rig. Previews only until you OK a refine | Refine step and auto-download into your asset folder |
 
+## Talk to text
+- **Turning it on:** tap **Talk** on the Send screen. It turns red ("Listening") and keeps listening until you tap it again. Browsers stop after a pause, and it starts again by itself while the toggle is on.
+- **What it does:** what you say is typed into the box, and the words still being heard show in grey underneath. It never sends by itself, so you still Route or Split.
+- **Spoken punctuation:** "colon" types `:` (so "SUI colon ..." works as a tag). "comma", "period" and "question mark" work too. "new line" starts a new line. "open local" and "close local" wrap a private part.
+- **Browsers:** Chrome, Edge and Safari. The browser asks for the microphone the first time.
+
 ## Tags and vetting: a head start, never a shortcut
 Start a request with a tag to say what it's about: `SUI: the bag frame overlaps the minimap`, `Hubbell Kaizen: too much walking at receiving`, `Staging Lane: lanes show late after midnight`, `Wizra: ...`, `Breneland: ...`, `Vent: ...`.
 

@@ -17,7 +17,9 @@ button.sm{background:var(--card);color:var(--text);border:1px solid var(--line);
 select{background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:7px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin:10px 0}
 .dim{color:var(--dim);font-size:14px}.tag{font-size:12px;border:1px solid var(--line);border-radius:6px;padding:1px 6px;color:var(--dim)}
-.st-waiting{color:var(--warn)}.st-done{color:var(--ok)}.st-failed{color:var(--bad)}.st-queued,.st-running{color:var(--acc)}.st-held,.st-cancelled{color:var(--dim)}.st-waiting-answer,.st-reviewing{color:var(--warn)}
+.st-waiting{color:var(--warn)}.st-done{color:var(--ok)}.st-failed{color:var(--bad)}.st-queued,.st-running{color:var(--acc)}.st-held,.st-cancelled{color:var(--dim)}
+#micBtn.on{background:var(--bad)!important;color:#fff!important;border-color:var(--bad)!important;animation:pulse 1.4s infinite}
+@keyframes pulse{50%{opacity:.65}}.st-waiting-answer,.st-reviewing{color:var(--warn)}
 pre{white-space:pre-wrap;word-break:break-word;background:#0f1116;border-radius:8px;padding:10px;font-size:13px;max-height:340px;overflow:auto}
 h3{margin:18px 0 6px}.mode{margin:4px 0 4px 10px}
 #login{display:none}
@@ -29,7 +31,8 @@ h3{margin:18px 0 6px}.mode{margin:4px 0 4px 10px}
 
 <section id="send">
   <textarea id="thought" placeholder="Dump the thought here. The hub picks where it goes."></textarea>
-  <div class="row"><button class="go" id="routeBtn">Route it</button><button class="go" id="splitBtn" style="background:#b48cff">Split it</button><span class="dim">Wrap private parts in [[local]] ... [[/local]]</span></div>
+  <div id="heard" class="dim" style="min-height:1.2em;font-style:italic"></div>
+  <div class="row"><button class="go" id="micBtn" title="Talk to text" style="background:var(--card);color:var(--text);border:1px solid var(--line)">&#127908; Talk</button><button class="go" id="routeBtn">Route it</button><button class="go" id="splitBtn" style="background:#b48cff">Split it</button><span class="dim">Wrap private parts in [[local]] ... [[/local]]</span></div>
   <div id="pick" class="card" style="display:none">
     <div id="why" class="dim"></div>
     <div class="row"><select id="tool"></select><select id="mode"></select><select id="area"></select><select id="proj"></select></div>
@@ -123,6 +126,26 @@ function jobCard(j) {
   ${j.status === 'queued' && j.prompt ? `<details><summary class="dim">What goes to Claude Code</summary><pre>${esc(j.prompt)}</pre></details>` : ''}
   <div class="row">${btns}</div></div>`;
 }
+/* ---- talk to text: tap to start, it keeps listening (and restarts after pauses) until tapped off ---- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, listening = false;
+/* spoken punctuation, so tags work by voice: "SUI colon the bag frame..." */
+const spoken = t => t.replace(/\s*\bcolon\b\s*/gi, ': ').replace(/\s*\b(new line|next line)\b\s*/gi, '\n').replace(/\s*\bcomma\b/gi, ',').replace(/\s*\b(period|full stop)\b/gi, '.').replace(/\s*\bquestion mark\b/gi, '?').replace(/\bopen local\b/gi, '[[local]]').replace(/\bclose local\b/gi, '[[/local]]');
+function addText(t) { const box = $('thought'); const cur = box.value; box.value = (cur && !/[\s\n]$/.test(cur) ? cur + ' ' : cur) + spoken(t.trim()); box.value = box.value.replace(/^(\S)/, c => c.toUpperCase()); }
+function micOn() {
+  if (!SR) { $('heard').textContent = 'Talk to text needs Chrome, Edge or Safari.'; return; }
+  rec = new SR(); rec.continuous = true; rec.interimResults = true; rec.lang = navigator.language || 'en-US';
+  rec.onresult = e => { let interim = ''; for (let i = e.resultIndex; i < e.results.length; i++) { const r = e.results[i]; if (r.isFinal) addText(r[0].transcript); else interim += r[0].transcript; } $('heard').textContent = interim ? spoken(interim) : 'Listening...'; };
+  rec.onerror = e => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { $('heard').textContent = 'The microphone is blocked for this site. Allow it in the browser settings.'; micOff(); } };
+  /* browsers stop after a pause; while the toggle is on, start again */
+  rec.onend = () => { if (listening) setTimeout(() => { try { rec.start(); } catch { } }, 250); };
+  listening = true; localStorage.setItem('bbMic', '1'); $('micBtn').classList.add('on'); $('micBtn').innerHTML = '&#127908; Listening'; $('heard').textContent = 'Listening...';
+  try { rec.start(); } catch { }
+}
+function micOff() { listening = false; localStorage.removeItem('bbMic'); if (rec) { try { rec.stop(); } catch { } } $('micBtn').classList.remove('on'); $('micBtn').innerHTML = '&#127908; Talk'; $('heard').textContent = ''; }
+$('micBtn').onclick = () => listening ? micOff() : micOn();
+if (!SR) $('micBtn').title = 'Talk to text needs Chrome, Edge or Safari';
+
 /* ---- split ---- */
 let SP = null;
 const lines = id => $(id).value.split('\n').map(x => x.trim()).filter(Boolean);
