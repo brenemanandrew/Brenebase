@@ -62,6 +62,17 @@ This is the rule the router follows (`pick3d` and `pickMotion` in `route.mjs`):
 | Overtime kiosk (ardenot) | Opened as a link. Code changes go to the Coder | Nothing. The hub never sends kiosk data to an outside model |
 | Meshy | Called directly: generate, retexture, rig. Previews only until you OK a refine | Refine step and auto-download into your asset folder |
 
+## Images: Wizra's real model first
+- **Pictures of Wizra are rendered from her real 3D model** with Brenai's own picture renderer (`avatar.snapshot`, the same one the picture pack uses). The PC worker runs `worker/render-brenai.cjs` against brenai.fly.dev.
+  - A sheet request (T-pose, front and back, turnaround) gives two pictures: her arms set to her model's T-pose, and the back view turned 180 degrees.
+  - It is free and runs without waiting for an OK.
+- **Restyle:** the result has **Restyle realistic** and **Restyle anime** buttons. Each sends a render to Meshy as the reference picture, so Meshy keeps her real look instead of guessing. These spend credits and wait for your OK.
+- **Other pictures** (not of Wizra) go to **Concept art (Meshy)**, one picture per style asked for, or to **Image in Copilot** by copy and paste.
+- **PC setup for the renderer, once:**
+  1. In the Brenebase folder, run `npm i playwright` and then `npx playwright install chromium`.
+  2. Set `BRENAI_COOKIES` to a curl cookie jar for a logged-in Brenai player, the same kind the picture pack generator uses.
+  3. Optionally set `BRENAI_URL` (default https://brenai.fly.dev).
+
 ## Talk to text
 - **Turning it on:** tap **Talk** on the Send screen. It turns red ("Listening") and keeps listening until you tap it again. Browsers stop after a pause, and it starts again by itself while the toggle is on.
 - **What it does:** what you say is typed into the box, and the words still being heard show in grey underneath. It never sends by itself, so you still Route or Split.

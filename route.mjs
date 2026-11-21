@@ -52,7 +52,8 @@ export function ruleRoute(thought) {
   const isMotion = ['animation', 'animate', 'mocap', 'motion', 'gesture', 'retarget', 'clip', 'dance', 'walk cycle', 'act it out', 'on camera', 'fidget'].some(w => has(t, w)) || (best && best.tool === 'motion');
   /* a 2D picture (concept art, sheet, illustration) is the Images tool, not 3D and not the planner */
   const twoD = ['illustration', 'concept art', 'concept image', 'character sheet', 'reference sheet', 'turnaround', 'realistic image', 'anime looking', 'drawing of', 'picture of', 'image of', 'portrait of', 'key art', 'artwork', 'mood board', '2d'].some(w => has(t, w)) && !['3d model', 'model of', 'glb', 'mesh', 'rig', 'from this picture', 'from a photo', 'image to 3d'].some(w => has(t, w));
-  if (twoD) { const ed = ['edit this image', 'edit the image', 'change this picture', 'change the image', 'restyle'].some(w => has(t, w)); best = { tool: 'image', mode: ed ? 'edit' : 'concept', score: 5 }; why = ed ? 'Changing a picture: Meshy image to image.' : 'A 2D picture: Meshy concept art (or Copilot by copy and paste).'; }
+  if (twoD && (has(t, 'wizra') || has(t, 'my character wizra')) && !['edit this image', 'restyle'].some(w => has(t, w))) { best = { tool: 'image', mode: 'model', score: 5 }; why = "A picture of Wizra: rendered from her real model with Brenai's renderer (Restyle with Meshy for other styles)."; }
+  else if (twoD) { const ed = ['edit this image', 'edit the image', 'change this picture', 'change the image', 'restyle'].some(w => has(t, w)); best = { tool: 'image', mode: ed ? 'edit' : 'concept', score: 5 }; why = ed ? 'Changing a picture: Meshy image to image.' : 'A 2D picture: Meshy concept art (or Copilot by copy and paste).'; }
   const motion = !twoD && isMotion && pickMotion(t);
   const m3 = !twoD && !motion && is3d && pick3d(t);
   if (twoD) { /* set above */ }

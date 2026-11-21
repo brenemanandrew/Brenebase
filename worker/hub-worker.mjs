@@ -77,6 +77,14 @@ async function doJob(j) {
     const line = r.out.split('\n').reverse().find(l => l.startsWith('HUB_RESULT '));
     return { ok: r.code === 0 && !!line, text: line ? line.slice(11) : r.err || r.out.slice(-2000), error: r.code ? r.err : undefined };
   }
+  if (j.backend === 'pc-run' && j.tool === 'image' && j.mode === 'model') {
+    const dir = path.join(os.tmpdir(), 'brenebase-render-' + j.id); fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'specs.json'), JSON.stringify(j.args.specs || []));
+    const r = await run('node', [path.join(HERE, 'render-brenai.cjs'), path.join(dir, 'specs.json'), path.join(dir, 'out')], path.join(HERE, '..'));
+    const files = fs.existsSync(path.join(dir, 'out')) ? fs.readdirSync(path.join(dir, 'out')) : [];
+    const images = files.map(f => ({ name: f, data: fs.readFileSync(path.join(dir, 'out', f)).toString('base64') }));
+    return { ok: images.length > 0, text: r.out.slice(-1500), result: { images64: images }, error: images.length ? undefined : (r.out + r.err).slice(-800) };
+  }
   if (j.backend === 'pc-run') {
     const f = PC_SCRIPTS[`${j.tool}:${j.mode}`]; if (!f) return { ok: false, error: `No PC script for ${j.tool}:${j.mode}` };
     const [cmd, args] = f(j); const r = await run(cmd, args, REPOS);

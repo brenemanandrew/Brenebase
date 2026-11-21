@@ -67,14 +67,25 @@ const send = (res, code, obj) => { res.writeHead(code, { 'content-type': 'applic
 const body = req => new Promise(ok => { let b = ''; req.on('data', c => { b += c; if (b.length > 2e6) req.destroy(); }); req.on('end', () => { try { ok(JSON.parse(b || '{}')); } catch { ok({}); } }); });
 
 /* a routed thought becomes a job. Whether it runs now or waits depends on autonomy, the tool's gate and whether it spends credits. */
+/* Brenai renderer specs for a picture of Wizra: a front and back sheet in T-pose unless a pose is named */
+function wizraSpecs(text) {
+  const t = String(text).toLowerCase(), T = { leftUpperArm: [0, 0, 0], rightUpperArm: [0, 0, 0], leftLowerArm: [0, 0, 0], rightLowerArm: [0, 0, 0], leftHand: [0, 0, 0], rightHand: [0, 0, 0] };
+  const base = { cam: 'full', pose: 'full', scene: 'studio', face: /smil|happy/.test(t) ? 'happy' : 'neutral' };
+  const tpose = /t-?pose|turnaround|sheet|front and back/.test(t);
+  const specs = [{ name: 'front', spec: { ...base, ...(tpose ? { set: T } : {}) } }];
+  if (/back|turnaround|sheet|both sides/.test(t)) specs.push({ name: 'back', spec: { ...base, set: { ...(tpose ? T : {}), hips: [0, Math.PI, 0] } } });
+  return specs;
+}
+const IMG_DIR = path.join(process.env.DATA_DIR || './data', 'images');
 function makeJob({ text, tool, mode, area, autonomy = 'draft', args = {}, repo, target, project }) {
+  if (tool === 'image' && mode === 'model' && !args.specs) args = { ...args, specs: wizraSpecs(text) };
   let r = resolve(tool, mode); if (!r) throw new Error('unknown tool');
   if (process.env.HUB_WORK_LOCAL === '1' && area === 'work' && r.backend === 'claude') r = { ...r, backend: 'pc-model', runsOn: 'pc' };
   const pj = project === '' ? null : PJ.card(project) || PJ.match(text);
   /* a private (work) project's context never goes to the cloud: those jobs move to the PC model */
   if (pj && pj.private && r.backend === 'claude') r = { ...r, backend: 'pc-model', runsOn: 'pc' };
   const job = { text, area: area || (pj && pj.area), autonomy, args, repo: repo || (pj && pj.repo && pj.repo.includes('/') && !pj.repo.includes(' ') ? pj.repo : undefined), target, project: pj ? pj.id : null, ...r };
-  const safe = ['brief', 'claude', 'link', 'copilot'].includes(r.backend) || (r.backend === 'pc-model');
+  const safe = ['brief', 'claude', 'link', 'copilot'].includes(r.backend) || (r.backend === 'pc-model') || (tool === 'image' && r.mode === 'model');
   const mustAsk = r.gate === 'always' || SPENDS.includes(r.backend) || autonomy === 'ask' || (autonomy === 'draft' && !safe);
   return L.add({ ...job, status: mustAsk ? 'waiting' : 'ready' });
 }
@@ -167,7 +178,7 @@ http.createServer(async (req, res) => {
     if (p === '/api/login' && req.method === 'POST') { const b = await body(req); if (PASS && b.password !== PASS) return send(res, 401, { error: 'wrong password' }); res.setHeader('set-cookie', `hub=${SESSION}; HttpOnly; Path=/; Max-Age=15552000; SameSite=Lax${process.env.FLY_APP_NAME ? '; Secure' : ''}`); return send(res, 200, { ok: true }); }
 
     /* ---- files the PC installer downloads (no secrets in any of them) ---- */
-    const PCFILES = { 'pc/brenebase-agent.mjs': 'pc/brenebase-agent.mjs', 'pc/install-agent.ps1': 'pc/install-agent.ps1', 'worker/hub-worker.mjs': 'worker/hub-worker.mjs', 'worker/blender_ops.py': 'worker/blender_ops.py', 'parts.mjs': 'parts.mjs' };
+    const PCFILES = { 'worker/render-brenai.cjs': 'worker/render-brenai.cjs', 'pc/brenebase-agent.mjs': 'pc/brenebase-agent.mjs', 'pc/install-agent.ps1': 'pc/install-agent.ps1', 'worker/hub-worker.mjs': 'worker/hub-worker.mjs', 'worker/blender_ops.py': 'worker/blender_ops.py', 'parts.mjs': 'parts.mjs' };
     const pcf = p.match(/^\/(?:pc-files\/)?(.+)$/); const pcKey = pcf && (p.startsWith('/pc-files/') ? pcf[1] : p === '/pc/install-agent.ps1' ? 'pc/install-agent.ps1' : null);
     if (pcKey && PCFILES[pcKey]) { res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }); return fs.createReadStream(path.join(path.dirname(PUB), PCFILES[pcKey])).pipe(res); }
 
@@ -192,7 +203,8 @@ http.createServer(async (req, res) => {
       worker.seen = Date.now();
       if (p === '/api/worker/next') { worker.can = (u.searchParams.get('can') || '').split(',').filter(Boolean); return send(res, 200, { job: L.next(worker.can) }); }
       if (p === '/api/worker/done' && req.method === 'POST') { const b = await body(req); const j = L.get(b.id); if (!j) return send(res, 404, {}); if (j.backend === 'readdir') { const n = b.ok ? U.fromPcFiles(b.result && b.result.files, j.dir) : 0; return send(res, 200, L.update(j.id, { status: b.ok ? 'done' : 'failed', error: b.error, result: { text: `${n} new update(s)` } }, 'update folder read')); }
-      if (j.backend === 'read') { const added = PJ.recordPc(j.project, j.source, b.ok, b.text || '', b.error); return send(res, 200, L.update(j.id, { status: b.ok ? 'done' : 'failed', error: b.error, result: { text: b.ok ? `${added.length} new note(s)` : '' } }, 'notes read')); } const text = b.text != null ? rejoin(b.text, j.held || []) : undefined; const fin = afterChange(L.update(b.id, { status: b.ok ? 'done' : 'failed', result: { ...b.result, text }, error: b.error }, b.ok ? 'back from the PC' : 'PC reported a failure'));
+      if (j.backend === 'read') { const added = PJ.recordPc(j.project, j.source, b.ok, b.text || '', b.error); return send(res, 200, L.update(j.id, { status: b.ok ? 'done' : 'failed', error: b.error, result: { text: b.ok ? `${added.length} new note(s)` : '' } }, 'notes read')); } const text = b.text != null ? rejoin(b.text, j.held || []) : undefined; if (b.result && b.result.images64) { fs.mkdirSync(IMG_DIR, { recursive: true }); b.result.images = b.result.images64.map(im => { const f = `${j.id}-${im.name.replace(/[^\w.-]/g, '')}`; fs.writeFileSync(path.join(IMG_DIR, f), Buffer.from(im.data, 'base64')); return `/api/img/${f}`; }); delete b.result.images64; b.result.restyle = j.tool === 'image' && j.mode === 'model'; }
+        const fin = afterChange(L.update(b.id, { status: b.ok ? 'done' : 'failed', result: { ...b.result, text }, error: b.error }, b.ok ? 'back from the PC' : 'PC reported a failure'));
         /* a Claude Code job that finished is itself an update, even if it forgot to write the file */
         if (j.backend === 'claude-code' && b.ok) U.add(`---\nproject: ${j.project || (j.parent && (L.get(j.parent) || {}).project) || ''}\nby: Claude Code via Brenebase job ${j.id}\nbranch: ${(b.result && b.result.branch) || ''}\ntitle: ${String(j.label).replace(/\n/g, ' ')}\n---\n## Done\n${String(text || '').split('\n').filter(l => l.trim()).slice(0, 25).map(l => '- ' + l.replace(/^[-*]\s*/, '')).join('\n')}`, { key: `job:${j.id}`, from: `Brenebase job ${j.id}` });
         return send(res, 200, fin); }
@@ -200,6 +212,15 @@ http.createServer(async (req, res) => {
     }
 
     if (p.startsWith('/api/') && !authed(req)) return send(res, 401, { error: 'login' });
+    const im = p.match(/^\/api\/img\/([\w.-]+)$/);
+    if (im) { const f = path.join(IMG_DIR, im[1]); if (!fs.existsSync(f)) return send(res, 404, {}); res.writeHead(200, { 'content-type': f.endsWith('.png') ? 'image/png' : 'image/webp' }); return fs.createReadStream(f).pipe(res); }
+    const rs = p.match(/^\/api\/jobs\/([a-f0-9]+)\/restyle$/);
+    if (rs && req.method === 'POST') {
+      /* her render goes to Meshy as the reference picture (a data URL, since Brenebase pictures need a login) */
+      const b = await body(req); const j = L.get(rs[1]); const img = j && j.result && (j.result.images || [])[b.n || 0]; if (!img) return send(res, 404, {});
+      const f = path.join(IMG_DIR, path.basename(img)); const data = `data:${f.endsWith('.png') ? 'image/png' : 'image/webp'};base64,${fs.readFileSync(f).toString('base64')}`;
+      return send(res, 200, makeJob({ text: `${b.style || 'Realistic, detailed, natural lighting'}. Keep the same character, outfit, pose and framing. ${j.text}`, tool: 'image', mode: 'edit', area: j.area, autonomy: 'draft', args: { image_url: data }, project: j.project }));
+    }
     if (p === '/api/settings' && req.method === 'GET') return send(res, 200, SETTINGS);
     if (p === '/api/settings' && req.method === 'POST') { const b = await body(req); if (['complex', 'all', 'off'].includes(b.copilotReview)) SETTINGS.copilotReview = b.copilotReview; saveSettings(); return send(res, 200, SETTINGS); }
     if (p === '/api/catalogue') return send(res, 200, { tools: TOOLS, areas: Object.fromEntries(Object.entries(AREAS).map(([k, v]) => [k, v.label])), autonomy: AUTONOMY, worker: { online: workerOnline(), can: worker.can }, claude: !!claude, meshy: !!process.env.MESHY_API_KEY });

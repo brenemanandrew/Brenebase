@@ -5,7 +5,7 @@
 $base = "https://brenebase.fly.dev"
 $dir = "$env:USERPROFILE\Brenebase"
 foreach ($d in $dir, "$dir\worker", "$dir\pc") { New-Item -ItemType Directory -Force $d | Out-Null }
-foreach ($f in 'pc/brenebase-agent.mjs', 'worker/hub-worker.mjs', 'worker/blender_ops.py', 'parts.mjs') { Invoke-WebRequest "$base/pc-files/$f" -OutFile (Join-Path $dir ($f -replace '/', '\')) }
+foreach ($f in 'pc/brenebase-agent.mjs', 'worker/hub-worker.mjs', 'worker/blender_ops.py', 'worker/render-brenai.cjs', 'parts.mjs') { Invoke-WebRequest "$base/pc-files/$f" -OutFile (Join-Path $dir ($f -replace '/', '\')) }
 Set-Content -Path "$dir\package.json" -Value '{ "name": "brenebase-pc", "private": true, "type": "module" }' -Encoding ascii
 
 # the PC key: typed here, never sent anywhere but Brenebase

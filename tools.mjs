@@ -86,8 +86,9 @@ export const TOOLS = [
   {
     id: 'image', type: 'make2d', name: 'Images', runsOn: 'meshy', backend: 'meshy',
     what: '2D pictures: concept art, character sheets, turnarounds (front and back), style tests. Meshy makes them (spends credits, waits for OK), or your personal Copilot by copy and paste.',
-    built: ['Meshy text to image and image to image (on your account)', 'Microsoft Copilot image creation'],
+    built: ['Brenai picture renderer (avatar.snapshot, as used by the picture pack)', 'Meshy text to image and image to image (on your account)', 'Microsoft Copilot image creation'],
     modes: {
+      model:   { label: "Wizra's real model (Brenai)", does: "Renders her actual 3D model with Brenai's own picture renderer on your PC: front and back, T-pose or a pose, any face. Free and exact. Add Restyle with Meshy for a realistic version.", backend: 'pc-run', runsOn: 'pc', words: ['render wizra', 'render her', 'her model', 'wizra model', 'snapshot of wizra'] },
       concept: { label: 'Concept art (Meshy)', does: 'New picture(s) from words. Asking for several styles (realistic and anime, for example) makes one picture per style.', words: ['illustration', 'concept art', 'concept image', 'image of', 'picture of', 'drawing of', 'character sheet', 'reference sheet', 'turnaround', 'front and back', 'realistic image', 'anime looking', 'anime style image', '2d', 'portrait of', 'artwork', 'key art', 'mood board'] },
       edit:    { label: 'Edit an image (Meshy)', does: 'Change a picture you give it (link): pose, outfit, proportions, style.', words: ['edit this image', 'edit the image', 'change this picture', 'change the image', 'make this picture', 'from this image', 'restyle'] },
       copilot: { label: 'Image in Copilot', does: 'Copilot makes the picture (free, copy and paste). SFW only.', backend: 'copilot', runsOn: 'cloud', words: ['image in copilot', 'copilot image', 'copilot picture'] },
