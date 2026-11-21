@@ -73,6 +73,13 @@ This is the rule the router follows (`pick3d` and `pickMotion` in `route.mjs`):
   2. Set `BRENAI_COOKIES` to a curl cookie jar for a logged-in Brenai player, the same kind the picture pack generator uses.
   3. Optionally set `BRENAI_URL` (default https://brenai.fly.dev).
 
+## Read aloud (Wizra's voice pack)
+- **Every finished job has a Read aloud button.** Your PC makes the audio with Kokoro, the same model and voices as Wizra's bridge, and it plays on your phone.
+- **Nothing new to install:** the worker uses the Kokoro copy that `start-wizra.ps1` already put in `%USERPROFILE%\Brenai` (set `WIZRA_DIR` if it's elsewhere).
+- **Voice and speed** are on the Tools tab (default `af_heart`, Wizra's default).
+- **Long answers** are spoken a few sentences at a time and joined. Code blocks and markdown marks are skipped.
+- If the worker isn't running, Read aloud asks the PC agent to start it.
+
 ## Talk to text
 - **Turning it on:** tap **Talk** on the Send screen. It turns red ("Listening") and keeps listening until you tap it again. Browsers stop after a pause, and it starts again by itself while the toggle is on.
 - **What it does:** what you say is typed into the box, and the words still being heard show in grey underneath. It never sends by itself, so you still Route or Split.

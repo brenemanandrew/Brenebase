@@ -16,6 +16,8 @@
      READ_ROOTS        folders project notes may be read from, ; separated (default G:\My Drive;F:\Projects;the WoW AddOns folder)
    Run: node hub-worker.mjs */
 import { spawn, spawnSync } from 'child_process';
+import { createRequire } from 'module';
+import { pathToFileURL } from 'url';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
@@ -44,6 +46,25 @@ if (found('claude')) can.push('claude-code');
 if (found(`"${BLENDER}"`)) can.push('blender');
 can.push('pc-run');
 if (found('git')) can.push('merge');
+/* the voice pack: Kokoro, the same model and voices as Wizra's bridge. Uses the copy start-wizra.ps1 already installed in
+   %USERPROFILE%\Brenai (or one in the Brenebase folder), so nothing new downloads. Loaded on the first job. */
+const KOKORO_HOMES = [path.join(HERE, '..'), process.env.WIZRA_DIR || path.join(os.homedir(), 'Brenai')];
+let kokoroPath = null;
+for (const d of KOKORO_HOMES) { try { kokoroPath = createRequire(path.join(d, 'package.json')).resolve('kokoro-js'); break; } catch { /* not here */ } }
+if (kokoroPath) can.push('tts');
+let tts = null;
+async function voice() {
+  if (!tts) { const { KokoroTTS } = await import(pathToFileURL(kokoroPath).href); tts = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', { dtype: process.env.WIZRA_VOICE_QUALITY || 'q8', device: 'cpu' }); }
+  return tts;
+}
+/* plain 16-bit WAV, the same as the bridge: every phone browser plays it */
+function wav16(f32, rate) {
+  const b = Buffer.alloc(44 + f32.length * 2);
+  b.write('RIFF', 0); b.writeUInt32LE(36 + f32.length * 2, 4); b.write('WAVEfmt ', 8); b.writeUInt32LE(16, 16); b.writeUInt16LE(1, 20); b.writeUInt16LE(1, 22);
+  b.writeUInt32LE(rate, 24); b.writeUInt32LE(rate * 2, 28); b.writeUInt16LE(2, 32); b.writeUInt16LE(16, 34); b.write('data', 36); b.writeUInt32LE(f32.length * 2, 40);
+  for (let i = 0; i < f32.length; i++) b.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(f32[i] * 32767))), 44 + i * 2);
+  return b;
+}
 /* project notes on this PC: only files inside these folders can be read (Google Drive for desktop, project folders) */
 const READ_ROOTS = (process.env.READ_ROOTS || 'G:\\My Drive;F:\\Projects;C:\\Program Files (x86)\\World of Warcraft\\_retail_\\Interface\\AddOns').split(';').map(r => path.resolve(r.trim())).filter(Boolean);
 can.push('read', 'readdir');
@@ -89,6 +110,16 @@ async function doJob(j) {
     const f = PC_SCRIPTS[`${j.tool}:${j.mode}`]; if (!f) return { ok: false, error: `No PC script for ${j.tool}:${j.mode}` };
     const [cmd, args] = f(j); const r = await run(cmd, args, REPOS);
     return { ok: r.code === 0, text: r.out || r.err, error: r.code ? r.err : undefined };
+  }
+  if (j.backend === 'tts') {
+    const t = await voice(); const v = t.voices[j.voice] ? j.voice : 'af_heart', speed = Math.max(0.6, Math.min(1.6, Number(j.speed) || 1));
+    /* long answers are spoken a few sentences at a time and joined */
+    const chunks = String(j.text).match(/[^.!?\n]+[.!?]*\s*/g) || [String(j.text)], parts = []; let cur = '';
+    for (const c of chunks) { if ((cur + c).length > 600 && cur) { parts.push(cur); cur = ''; } cur += c; } if (cur.trim()) parts.push(cur);
+    let rate = 24000; const pieces = [];
+    for (const p of parts.slice(0, 12)) { const a = await t.generate(p.trim(), { voice: v, speed }); rate = a.sampling_rate; pieces.push(a.audio); }
+    const all = new Float32Array(pieces.reduce((n, a) => n + a.length, 0)); let o = 0; for (const a of pieces) { all.set(a, o); o += a.length; }
+    return { ok: true, text: `spoken with ${v}`, result: { audio64: wav16(all, rate).toString('base64') } };
   }
   if (j.backend === 'merge') return merge(j);
   if (j.backend === 'readdir') {
