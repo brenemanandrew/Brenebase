@@ -17,19 +17,19 @@
   "outfit",
   "romance level"
  ],
- "what": "Companion life-sim at brenai.fly.dev. The player talks with Wizra (22, goth, D&D, college student) who has a 3D VRM body, voice, dorm, schedule, moods, memory and a relationship that grows through romance levels. Her words come from the PC model through a bridge; the game supplies everything around them.",
+ "what": "Companion game at brenai.fly.dev. The player talks with Wizra (22, college student, leans goth, plays D&D): 3D VRM body, voice, rooms, schedule, moods, memory, pictures, minigames, movie night, D&D night, and a relationship with five romance levels (0 to 4). Her words come from LM Studio on Andrew's PC (mn-violet-lotus-12b) through a websocket bridge; the server supplies everything around them. Full reference: brenai/MASTERFILE.md.",
  "where": [
   "Repo brenemanandrew/Brenelandtest, folder brenai/",
   "Live: https://brenai.fly.dev (deploys on push to main touching brenai/, workflow brenai-deploy.yml)",
   "Data: Fly volume brenai_data at /data (3 GB): per-player saves, shared.json, avatar.vrm, anims.json, outfits/, pack/, inbox/"
  ],
  "stack": [
-  "Node, one server file (server.mjs), no build step, no framework",
-  "Plain browser modules, three.js and three-vrm vendored in public/vendor",
-  "PC model MN-Violet-Lotus-12B in Bionic on an RTX 5060 Ti 16 GB, reached by bridge/wizra-bridge.mjs",
-  "Kokoro voice on the PC (kokoro-js, 28 voices), browser voices as fallback",
-  "Claude claude-opus-5-5 only as a backup when the PC is offline and a key is set",
-  "MediaPipe pose, face and hand trackers on the mocap page"
+  "Node 22, one server file (server.mjs, node:http, no framework, no build step); helpers persona.mjs, away.mjs, pics.mjs, movies.mjs, dnd.mjs",
+  "Brain: bridge/wizra-bridge.mjs on the PC, websocket out to the server (BRENAI_BRAIN_TOKEN); replyLocal() builds turns, systemBlocks() builds her instructions",
+  "Page: public/index.html plus avatar.js, avatar-vrm.js (three.js r0.187, @pixiv/three-vrm 3.5.5), places.js, mapkit.js, props.js, hang.js, minigame.js, dnd.js, robot.js, intro.js, facecam.js, sound.js, tongue.js, fineface.js, bodyfix.js, fitpip.js",
+  "Owner pages: dev.html (Studio) and mocap.html + mocap.js",
+  "Fly app brenai, volume /data (3 GB), deploys on push to main",
+  "When the Brenai Studio PC app is in Coding mode it swaps the model out and Wizra is offline"
  ],
  "tools": [
   {
@@ -85,51 +85,55 @@
    "note": "test switches: AWAY_SPEED, AWAY_TEST_LIE, CALL_TEST_RING, PIC_TEST, VISIT_TEST, WANDER_TEST"
   },
   {
-   "name": "VISIT_AT",
-   "value": "90 rapport",
-   "note": "unlocks visits"
-  },
-  {
    "name": "Romance level costs",
    "value": "lvl1 100, lvl2 500, lvl3 700, cap 1000",
    "note": "editable in Studio, Game rules"
+  },
+  {
+   "name": "Model",
+   "value": "mn-violet-lotus-12b in LM Studio on the PC",
+   "note": "websocket bridge"
+  },
+  {
+   "name": "Saves",
+   "value": "/data/users/<id>.json per player (id = hash of PIN); /data/shared.json for Studio work, outfits, rules, persona, owners",
+   "note": "2 saves backed up to /data/backups/reset-1795300445100 on 2026-11-21"
   }
  ],
  "working": [
-  "Chat, voice and talk-to-text",
-  "3D body, rooms, errands and routine",
-  "Coming and going, cover stories, plans",
-  "Video calls, her calling you",
-  "Pictures by level, picture pack",
-  "Outfits by level and moment (55 models)",
-  "Studio: layout, events, maps, character and rules",
-  "Mocap: camera, video, picture, face, fingers, tongue",
-  "Movie night, D&D stories with voices, weather, web push",
-  "Players with PINs, PIN recovery"
+  "Chat with voice, actions as gestures, emoji replies, stories with per-character voices",
+  "3D body: poses, walking, gestures, expressions, tongue, tears, weather, first-person visits",
+  "Coming and going with moods, calls, cover stories",
+  "Rapport, three bond paths, romance levels 0 to 4, outfits by level and moment, pictures by level",
+  "Heart game, one-on-one time, Studio minigames, movie night, D&D night with a Dungeon Master",
+  "Studio, motion capture, first-meeting matching flow",
+  "Robot panel (her state, feelings, zones, levels, traits, notes, core character) applied on her next reply",
+  "Master key (agreeable switch opens every gate for owners), puppet lines (Wizra: text), rewind, reset-all",
+  "Character reset 2026-11-21: open, easygoing, leans yes, grows through growth lines and trait nudges"
  ],
  "broken": [
-  "PC model sometimes stops answering while the bridge stays connected (status dot amber); fix is reloading the model and its server on the PC",
-  "Movie night: the player on the couch is a stand-in; her lounging pose and walking to switch on the TV are not built",
-  "Self-collision (bodyfix.js) is written but off behind window.WIZRA_FIX, never checked visually",
-  "Mocap on a real camera is largely untested; jitter, finger and tongue tuned on made-up data",
-  "Room clipping in windows and furniture reported, not looked at",
-  "Weather shows only grey or bright sky, no rain or snow",
-  "Her week does not yet decide when she is really out"
+  "Not verified with the real PC model: how the new character talks; whether growth lines and trait nudges come back as valid JSON from the 12B model",
+  "Not verified: standing by puppet lines, following the right-now note, staying agreeable with the switch on",
+  "Not verified: D&D narration format, character voices, emoji-only replies",
+  "Not verified on a real screen: robot button, zone chips, pull-away reaction, seated reactions at the D&D table, last camera tilt",
+  "Cloth weight measured working but looks almost unchanged in renders; pictures (takeSnap) still use the stiff cloth shape",
+  "Self-collision (bodyfix.js) off behind window.WIZRA_FIX; room clipping reported, not investigated",
+  "Mocap on a real camera largely untested"
  ],
  "open": [
-  "Mixamo batch: 79 clips chosen, still need converting with clipconv and posting to /api/anims (fetch the current set and merge)",
-  "Gifts and decor land on fixed spots; player cannot choose",
+  "D&D stage 2: her playing alone with bots, more adventures, saving mid-adventure",
+  "Mixamo batch: 79 clips chosen, not fetched yet; convert with tools/clipconv.mjs and wire in (lounging, dice, sitting, dances)",
+  "Movie night: real player model, lounging pose, her walking to switch the TV on",
   "Mocap and clip converter only output for VRM; a Breneland (66-bone Mixamo) output would make them shared tools"
  ],
  "rules": [
-  "Read brenai/AGENTS.md, CODING.md and HANDOFF.md first",
-  "Run tools/check.sh before every commit, chain with &&",
-  "Never put a // comment after code on a line that continues",
-  "Small exact edits, never reformat files",
+  "Read brenai/MASTERFILE.md first (code wins if they disagree), then CODING.md",
+  "Run brenai/tools/check.sh and commit only if it passes, chained with &&; a new server file goes on the Dockerfile COPY line and into check.sh",
+  "Never put a // comment after code on a line that continues; use /* */",
+  "Do not read his chat with her or her notes about him; work with counts, timestamps and who spoke",
   "Her model, outfits, motion clips and picture pack never go into git",
-  "Do not read the owner's chat or her notes about him",
-  "Pushing to main deploys live: only when Andrew asks",
-  "Never use em dashes"
+  "Pushing to main deploys and restarts the server; do not deploy while a long job is using the live site",
+  "Never use em dashes. Answer short. Report only what was tested"
  ],
  "avoid_redoing": [
   "Studio already covers character, rules, events, maps, layout and outfits: do not ask for code for those",
@@ -137,6 +141,11 @@
   "Sound is all Web Audio in sound.js, no audio files"
  ],
  "sources": [
+  {
+   "kind": "github",
+   "repo": "brenemanandrew/Brenelandtest",
+   "path": "brenai/MASTERFILE.md"
+  },
   {
    "kind": "github",
    "repo": "brenemanandrew/Brenelandtest",
@@ -153,5 +162,6 @@
    "path": "brenai/README.md"
   }
  ],
- "repo": "brenemanandrew/Brenelandtest"
+ "repo": "brenemanandrew/Brenelandtest",
+ "last_update": "2026-11-21 (masterfile commit 2aeef98)"
 }
