@@ -79,7 +79,7 @@ const run = (cmd, args, cwd, input) => new Promise(ok => {
 
 async function doJob(j) {
   if (j.backend === 'pc-model') {
-    const r = await fetch(`${BIONIC}/v1/chat/completions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'system', content: j.system || '' }, { role: 'user', content: j.text }], temperature: 0.8, max_tokens: j.maxTokens || 800 }) });
+    const r = await fetch(`${BIONIC}/v1/chat/completions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'system', content: j.system || '' }, ...(j.messages && j.messages.length ? j.messages : [{ role: 'user', content: j.text }])], temperature: 0.8, max_tokens: j.maxTokens || 800 }) });
     const d = await r.json(); return { ok: r.ok, text: d.choices?.[0]?.message?.content || '', error: r.ok ? undefined : JSON.stringify(d).slice(0, 300) };
   }
   if (j.backend === 'claude-code') {

@@ -73,11 +73,19 @@ This is the rule the router follows (`pick3d` and `pickMotion` in `route.mjs`):
   2. Set `BRENAI_COOKIES` to a curl cookie jar for a logged-in Brenai player, the same kind the picture pack generator uses.
   3. Optionally set `BRENAI_URL` (default https://brenai.fly.dev).
 
+## Companion (the one you can rage at)
+- **A Companion tab** for a real back-and-forth chat on your PC model. It never goes to Claude or Copilot, and has no filters.
+- **First time you open it, you set it up:** name, skin, hair, eyes, top, shirt and background colours (with a live preview), a voice, an optional "who they are" note, and whether replies are read aloud. **Edit look** changes it later. The tab takes the companion's name.
+- **The avatar** is Brenai's cartoon puppet with its colours made settable (`public/companion-avatar.js`). It blinks, its face follows the mood of what's said, it plays gestures from *actions*, and its mouth follows the voice while a reply is spoken.
+- **Modes:** Just talk, Vent, Roleplay, Coach. The last 24 lines go to the model as a real conversation.
+- **Talk** button for voice input. **New conversation** clears the history.
+- If the PC worker is off, sending asks the PC agent to start the worker and the model.
+
 ## Read aloud (Wizra's voice pack)
 - **Every finished job has a Read aloud button.** Your PC makes the audio with Kokoro, the same model and voices as Wizra's bridge, and it plays on your phone.
 - **Nothing new to install:** the worker uses the Kokoro copy that `start-wizra.ps1` already put in `%USERPROFILE%\Brenai` (set `WIZRA_DIR` if it's elsewhere).
 - **Voice and speed** are on the Tools tab (default `af_heart`, Wizra's default).
-- **Long answers** are spoken a few sentences at a time and joined. Code blocks and markdown marks are skipped.
+- **Only what a person would read out loud** goes to the voice: code, links, file paths, tables, JSON, *actions* and formatting marks are skipped. If nothing is left, no voice job is made. Long answers are capped (about 1500 characters) so the PC isn't tied up.
 - If the worker isn't running, Read aloud asks the PC agent to start it.
 
 ## Talk to text

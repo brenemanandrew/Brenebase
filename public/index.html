@@ -18,14 +18,14 @@ select{background:var(--card);color:var(--text);border:1px solid var(--line);bor
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin:10px 0}
 .dim{color:var(--dim);font-size:14px}.tag{font-size:12px;border:1px solid var(--line);border-radius:6px;padding:1px 6px;color:var(--dim)}
 .st-waiting{color:var(--warn)}.st-done{color:var(--ok)}.st-failed{color:var(--bad)}.st-queued,.st-running{color:var(--acc)}.st-held,.st-cancelled{color:var(--dim)}
-#micBtn.on{background:var(--bad)!important;color:#fff!important;border-color:var(--bad)!important;animation:pulse 1.4s infinite}
+#cpMic.on,#micBtn.on{background:var(--bad)!important;color:#fff!important;border-color:var(--bad)!important;animation:pulse 1.4s infinite}
 @keyframes pulse{50%{opacity:.65}}.st-waiting-answer,.st-reviewing{color:var(--warn)}
 pre{white-space:pre-wrap;word-break:break-word;background:#0f1116;border-radius:8px;padding:10px;font-size:13px;max-height:340px;overflow:auto}
 h3{margin:18px 0 6px}.mode{margin:4px 0 4px 10px}
 #login{display:none}
 </style></head><body>
 <header><b>Brenebase</b><span class="dim" id="lights"><span id="adot" class="dot"></span> PC <span id="mdot" class="dot"></span> Model <span id="wdot" class="dot"></span> Worker</span>
-<nav><button data-tab="send" class="on">Send</button><button data-tab="jobs">Jobs</button><button data-tab="projects">Projects</button><button data-tab="pc">PC</button><button data-tab="tools">Tools</button></nav></header>
+<nav><button data-tab="send" class="on">Send</button><button data-tab="jobs">Jobs</button><button data-tab="companion" id="cpTab">Companion</button><button data-tab="projects">Projects</button><button data-tab="pc">PC</button><button data-tab="tools">Tools</button></nav></header>
 <main>
 <div id="login" class="card"><p>Password</p><div class="row"><input id="pw" type="password" style="flex:1;padding:9px;border-radius:8px;border:1px solid var(--line);background:#0f1116;color:var(--text)"><button class="go" id="loginBtn">Go</button></div></div>
 
@@ -61,6 +61,33 @@ h3{margin:18px 0 6px}.mode{margin:4px 0 4px 10px}
 </section>
 <section id="jobs" style="display:none"><div id="jobList"></div></section>
 <section id="projects" style="display:none"><div class="row"><button class="sm" id="syncBtn">Update notes now</button><span id="syncMsg" class="dim"></span></div><div id="projList"></div></section>
+<section id="companion" style="display:none">
+  <div id="cpSetup" class="card" style="display:none">
+    <b id="cpSetupTitle">Set up your companion</b>
+    <div class="dim">First time only. You can change it any time with Edit look.</div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px">
+      <div id="cpPreview" style="width:150px;height:150px;border-radius:14px;overflow:hidden;flex:none"></div>
+      <div style="flex:1;min-width:170px">
+        <input id="cpName" placeholder="Name" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--line);background:#0f1116;color:var(--text);margin-bottom:6px">
+        <div class="row" id="cpColors" style="margin:4px 0"></div>
+      </div>
+    </div>
+    <textarea id="cpAbout" placeholder="Who they are, how they talk, anything they should know about you (optional)" style="min-height:70px;margin-top:8px"></textarea>
+    <div class="row"><select id="cpVoice"></select><label class="dim"><input type="checkbox" id="cpSpeak"> read replies aloud</label></div>
+    <div class="row"><button class="go" id="cpSave">Save</button><button class="sm" id="cpCancel" style="display:none">Cancel</button></div>
+  </div>
+  <div id="cpChat" style="display:none">
+    <div style="display:flex;gap:10px;align-items:flex-end">
+      <div id="cpStage" style="width:42%;max-width:220px;aspect-ratio:1;border-radius:16px;overflow:hidden;flex:none"></div>
+      <div style="flex:1"><b id="cpWho"></b><div class="dim" id="cpStatus"></div>
+        <div class="row" id="cpModes" style="margin:6px 0"></div>
+        <div class="row"><button class="sm" id="cpEdit">Edit look</button><button class="sm" id="cpClear">New conversation</button></div></div>
+    </div>
+    <div id="cpLog" style="max-height:46vh;overflow:auto;margin:10px 0"></div>
+    <textarea id="cpIn" placeholder="Say it." style="min-height:70px"></textarea>
+    <div class="row"><button class="go" id="cpMic" style="background:var(--card);color:var(--text);border:1px solid var(--line)">&#127908; Talk</button><button class="go" id="cpSend">Send</button></div>
+  </div>
+</section>
 <section id="pc" style="display:none"><div id="pcBox"></div></section>
 <section id="tools" style="display:none"><div id="catalogue"></div></section>
 </main>
@@ -70,7 +97,7 @@ let CAT = null;
 const api = async (p, b) => { const r = await fetch(p, b ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) } : {}); if (r.status === 401) { $('login').style.display = 'block'; throw new Error('login'); } return r.json(); };
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-document.querySelectorAll('nav button').forEach(b => b.onclick = () => { document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b)); for (const s of ['send', 'jobs', 'projects', 'pc', 'tools']) $(s).style.display = s === b.dataset.tab ? '' : 'none'; if (b.dataset.tab === 'jobs') jobs(); if (b.dataset.tab === 'projects') projects(); if (b.dataset.tab === 'pc') pc(); });
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => { document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b)); for (const s of ['send', 'jobs', 'companion', 'projects', 'pc', 'tools']) $(s).style.display = s === b.dataset.tab ? '' : 'none'; if (b.dataset.tab === 'jobs') jobs(); if (b.dataset.tab === 'projects') projects(); if (b.dataset.tab === 'pc') pc(); if (b.dataset.tab === 'companion') companion(); });
 $('loginBtn').onclick = async () => { await api('/api/login', { password: $('pw').value }).catch(() => {}); $('login').style.display = 'none'; boot(); };
 
 function fillModes(sel) { const t = CAT.tools.find(t => t.id === $('tool').value); $('mode').innerHTML = Object.entries(t.modes).map(([k, m]) => `<option value="${k}">${esc(m.label)}</option>`).join(''); if (sel && t.modes[sel]) $('mode').value = sel; showDoes(); }
@@ -132,7 +159,8 @@ const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null, listening = false;
 /* spoken punctuation, so tags work by voice: "SUI colon the bag frame..." */
 const spoken = t => t.replace(/\s*\bcolon\b\s*/gi, ': ').replace(/\s*\b(new line|next line)\b\s*/gi, '\n').replace(/\s*\bcomma\b/gi, ',').replace(/\s*\b(period|full stop)\b/gi, '.').replace(/\s*\bquestion mark\b/gi, '?').replace(/\bopen local\b/gi, '[[local]]').replace(/\bclose local\b/gi, '[[/local]]');
-function addText(t) { const box = $('thought'); const cur = box.value; box.value = (cur && !/[\s\n]$/.test(cur) ? cur + ' ' : cur) + spoken(t.trim()); box.value = box.value.replace(/^(\S)/, c => c.toUpperCase()); }
+let micTarget = 'thought';
+function addText(t) { const box = $(micTarget); const cur = box.value; box.value = (cur && !/[\s\n]$/.test(cur) ? cur + ' ' : cur) + spoken(t.trim()); box.value = box.value.replace(/^(\S)/, c => c.toUpperCase()); }
 function micOn() {
   if (!SR) { $('heard').textContent = 'Talk to text needs Chrome, Edge or Safari.'; return; }
   rec = new SR(); rec.continuous = true; rec.interimResults = true; rec.lang = navigator.language || 'en-US';
@@ -143,9 +171,78 @@ function micOn() {
   listening = true; localStorage.setItem('bbMic', '1'); $('micBtn').classList.add('on'); $('micBtn').innerHTML = '&#127908; Listening'; $('heard').textContent = 'Listening...';
   try { rec.start(); } catch { }
 }
-function micOff() { listening = false; localStorage.removeItem('bbMic'); if (rec) { try { rec.stop(); } catch { } } $('micBtn').classList.remove('on'); $('micBtn').innerHTML = '&#127908; Talk'; $('heard').textContent = ''; }
-$('micBtn').onclick = () => listening ? micOff() : micOn();
+function micOff() { if ($('cpMic')) $('cpMic').classList.remove('on'); listening = false; localStorage.removeItem('bbMic'); if (rec) { try { rec.stop(); } catch { } } $('micBtn').classList.remove('on'); $('micBtn').innerHTML = '&#127908; Talk'; $('heard').textContent = ''; }
+$('micBtn').onclick = () => { if (listening && micTarget === 'thought') return micOff(); if (listening) micOff(); micTarget = 'thought'; micOn(); };
 if (!SR) $('micBtn').title = 'Talk to text needs Chrome, Edge or Safari';
+
+/* ---- companion: his own chat partner on the PC model, with the avatar he set up (Brenai's cartoon puppet) ---- */
+const CP_COLORS = [['skin', 'Skin', '#f4ecef'], ['hair', 'Hair', '#0b0b10'], ['iris', 'Eyes', '#3b2f4f'], ['top', 'Top', '#2a2234'], ['shirt', 'Shirt', '#e6dbe0'], ['bg1', 'Light', '#8a5bb8'], ['bg2', 'Shadow', '#2a1b4d']];
+const CP_MODES = [['chat', 'Just talk'], ['vent', 'Vent'], ['roleplay', 'Roleplay'], ['coach', 'Coach']];
+const CP_VOICES = ['af_heart', 'af_bella', 'af_nicole', 'af_sarah', 'af_sky', 'af_nova', 'af_river', 'af_jessica', 'af_kore', 'af_aoede', 'am_michael', 'am_fenrir', 'am_puck', 'am_echo', 'am_eric', 'am_liam', 'am_onyx', 'am_adam', 'bf_emma', 'bf_isabella', 'bf_lily', 'bm_george', 'bm_fable', 'bm_lewis', 'bm_daniel'];
+let CP = null, cpAv = null, cpMode = localStorage.getItem('cpMode') || 'chat', cpSeen = 0, cpTimer = 0;
+function cpLoadAvatar(look, el) { return new Promise(ok => { window.COMPANION_LOOK = look || {}; const go = () => ok(window.CompanionAvatar.mount(el)); if (window.CompanionAvatar) return go(); const sc = document.createElement('script'); sc.src = '/companion-avatar.js'; sc.onload = go; document.head.appendChild(sc); }); }
+function cpLook() { const l = {}; for (const [k] of CP_COLORS) l[k] = $('cp_' + k).value; return l; }
+async function cpSetupView(editing) {
+  $('cpChat').style.display = 'none'; $('cpSetup').style.display = ''; $('cpCancel').style.display = editing ? '' : 'none'; $('cpStage').textContent = ''; cpAv = null;
+  const S = (CP && CP.setup) || {}; const L = S.look || {};
+  $('cpSetupTitle').textContent = editing ? 'Edit your companion' : 'Set up your companion';
+  $('cpName').value = S.name || ''; $('cpAbout').value = S.about || ''; $('cpSpeak').checked = !!S.speak;
+  $('cpVoice').innerHTML = CP_VOICES.map(v => `<option${(S.voice || 'af_heart') === v ? ' selected' : ''}>${v}</option>`).join('');
+  $('cpColors').innerHTML = CP_COLORS.map(([k, n, d]) => `<label class="dim" style="display:flex;flex-direction:column;align-items:center;font-size:12px"><input type="color" id="cp_${k}" value="${L[k] || d}" style="width:38px;height:30px;border:0;background:none">${n}</label>`).join('');
+  const redraw = () => cpLoadAvatar(cpLook(), $('cpPreview'));
+  for (const [k] of CP_COLORS) $('cp_' + k).oninput = redraw;
+  redraw();
+}
+async function cpChatView() {
+  $('cpSetup').style.display = 'none'; $('cpChat').style.display = ''; $('cpPreview').textContent = ''; /* one avatar at a time: the drawing uses fixed ids */
+  $('cpWho').textContent = CP.setup.name; $('cpTab').textContent = CP.setup.name;
+  cpAv = await cpLoadAvatar(CP.setup.look, $('cpStage'));
+  $('cpModes').innerHTML = CP_MODES.map(([k, n]) => `<button class="sm" data-m="${k}" style="${k === cpMode ? 'border-color:var(--acc);color:var(--acc)' : ''}">${n}</button>`).join('');
+  $('cpModes').querySelectorAll('button').forEach(b => b.onclick = () => { cpMode = b.dataset.m; localStorage.setItem('cpMode', cpMode); cpChatView(); });
+  cpRender();
+}
+function cpRender() {
+  const h = CP.history || [];
+  $('cpLog').innerHTML = h.map(m => m.who === 'me' ? `<div style="text-align:right;margin:6px 0"><span style="display:inline-block;background:#24324a;border-radius:12px;padding:8px 11px;max-width:85%;text-align:left;white-space:pre-wrap">${esc(m.text)}</span></div>` : m.who === 'note' ? `<div class="dim" style="margin:6px 0">${esc(m.text)}</div>` : `<div style="margin:6px 0"><span style="display:inline-block;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 11px;max-width:85%;white-space:pre-wrap">${esc(m.text)}</span></div>`).join('') || `<p class="dim">Say anything. It stays on your PC model.</p>`;
+  $('cpLog').scrollTop = 1e9;
+  $('cpStatus').textContent = CP.waiting ? `${CP.setup.name} is thinking...` : CP.pc ? '' : 'PC worker offline: sending will try to start it.';
+  if (cpAv) cpAv.setThinking(!!CP.waiting);
+}
+async function companion() {
+  CP = await api('/api/companion');
+  if (!CP.setup) return cpSetupView(false);
+  if ($('cpChat').style.display === 'none' && $('cpSetup').style.display !== 'none' && $('cpCancel').style.display !== 'none') return;
+  cpSeen = (CP.history || []).length; await cpChatView();
+}
+$('cpSave').onclick = async () => { await api('/api/companion/setup', { name: $('cpName').value || 'Companion', about: $('cpAbout').value, voice: $('cpVoice').value, speak: $('cpSpeak').checked, look: cpLook() }); CP = await api('/api/companion'); cpChatView(); };
+$('cpCancel').onclick = () => cpChatView();
+$('cpEdit').onclick = () => cpSetupView(true);
+$('cpClear').onclick = async () => { if (!confirm('Start a new conversation? The old one is cleared.')) return; await api('/api/companion/clear', {}); companion(); };
+$('cpMic').onclick = () => { if (listening && micTarget === 'cpIn') { micOff(); $('cpMic').classList.remove('on'); return; } if (listening) micOff(); micTarget = 'cpIn'; micOn(); $('cpMic').classList.add('on'); };
+/* talking mouth: follow the loudness of the voice clip */
+function cpPlay(url) {
+  const a = new Audio(url); let ctx, an, buf, raf;
+  try { ctx = new (window.AudioContext || window.webkitAudioContext)(); an = ctx.createAnalyser(); an.fftSize = 256; ctx.createMediaElementSource(a).connect(an); an.connect(ctx.destination); buf = new Uint8Array(an.frequencyBinCount); } catch { }
+  const tick = () => { if (an) { an.getByteTimeDomainData(buf); let m = 0; for (const v of buf) m = Math.max(m, Math.abs(v - 128)); cpAv && cpAv.talk(Math.min(1, m / 50)); } else cpAv && cpAv.talk(0.6); if (!a.paused && !a.ended) raf = requestAnimationFrame(tick); };
+  a.onplay = tick; a.play().catch(() => { });
+}
+async function cpSpeak(jobId) {
+  await api(`/api/jobs/${jobId}/speak`, { voice: CP.setup.voice });
+  for (let i = 0; i < 60; i++) { await new Promise(r => setTimeout(r, 2500)); const j = await api(`/api/jobs/${jobId}`); if (j.result && j.result.audio) return cpPlay(j.result.audio); }
+}
+async function cpPoll() {
+  clearTimeout(cpTimer);
+  CP = await api('/api/companion'); const h = CP.history || [];
+  if (h.length > cpSeen) { const fresh = h.slice(cpSeen); cpSeen = h.length; cpRender(); for (const m of fresh) if (m.who === 'them') { if (cpAv) { cpAv.feel(m.text); cpAv.act && cpAv.act(m.text); } if (CP.setup.speak && m.job) cpSpeak(m.job); } }
+  else cpRender();
+  if (CP.waiting) cpTimer = setTimeout(cpPoll, 2000);
+}
+$('cpSend').onclick = async () => {
+  const t = $('cpIn').value.trim(); if (!t) return; $('cpIn').value = '';
+  if (cpAv) cpAv.feel(t);
+  await api('/api/companion/say', { text: t, mode: cpMode }); cpPoll();
+};
+$('cpIn').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !('ontouchstart' in window)) { e.preventDefault(); $('cpSend').onclick(); } };
 
 /* ---- split ---- */
 let SP = null;

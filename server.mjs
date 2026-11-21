@@ -32,6 +32,7 @@ import * as PA from './pcagent.mjs';
 import * as U from './updates.mjs';
 import * as TG from './tags.mjs';
 import { vet } from './vet.mjs';
+import * as CP from './companion.mjs';
 
 const PORT = +process.env.PORT || 8080;
 const PASS = process.env.HUB_PASSWORD || '';
@@ -77,6 +78,21 @@ function wizraSpecs(text) {
   return specs;
 }
 const IMG_DIR = path.join(process.env.DATA_DIR || './data', 'images');
+/* Only what a person would read out loud goes to the voice: no code, links, paths, tables, JSON, *actions* or
+   formatting marks. Capped so a long answer does not tie the PC up. Empty means no voice job at all. */
+export function speakable(text, cap = 1500) {
+  const keep = String(text || '')
+    .replace(/```[\s\S]*?```/g, ' ').replace(/`[^`]*`/g, ' ')
+    .replace(/\*[^*\n]{1,200}\*/g, ' ')
+    .replace(/https?:\/\/\S+/g, ' ').replace(/(?:[A-Za-z]:)?(?:[\\/][\w.@-]+){2,}\S*/g, ' ').replace(/\b[\w-]+\.(mjs|js|cjs|json|py|ps1|md|html|css|glb|vrm|wav|png|toml|yml)\b/g, ' ')
+    .split('\n').filter(l => { const t = l.trim(); return t && !/^[|{}\[\]<>$#]|^(import|export|const|let|var|function|def|class|return)\b|[;{}]\s*$|=>|^\s*"[\w-]+"\s*:/.test(t); })
+    .map(l => l.replace(/^\s*(?:[-*+]|\d+\.)\s+/, '').replace(/[#*_>|~]/g, '').replace(/\[(.*?)\]\(.*?\)/g, '$1'))
+    .join('. ').replace(/\s+/g, ' ').replace(/([:,;])\s*\./g, '.').replace(/\s+([.,!?])/g, '$1').replace(/(\.\s*){2,}/g, '. ').trim();
+  if (!/[a-z]{2}/i.test(keep)) return '';
+  if (keep.length <= cap) return keep;
+  const cut = keep.slice(0, cap); const end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '));
+  return end > cap * 0.5 ? cut.slice(0, end + 1) : cut;
+}
 function makeJob({ text, tool, mode, area, autonomy = 'draft', args = {}, repo, target, project }) {
   if (tool === 'image' && mode === 'model' && !args.specs) args = { ...args, specs: wizraSpecs(text) };
   let r = resolve(tool, mode); if (!r) throw new Error('unknown tool');
@@ -203,7 +219,8 @@ http.createServer(async (req, res) => {
       worker.seen = Date.now();
       if (p === '/api/worker/next') { worker.can = (u.searchParams.get('can') || '').split(',').filter(Boolean); return send(res, 200, { job: L.next(worker.can) }); }
       if (p === '/api/worker/done' && req.method === 'POST') { const b = await body(req); const j = L.get(b.id); if (!j) return send(res, 404, {}); if (j.backend === 'readdir') { const n = b.ok ? U.fromPcFiles(b.result && b.result.files, j.dir) : 0; return send(res, 200, L.update(j.id, { status: b.ok ? 'done' : 'failed', error: b.error, result: { text: `${n} new update(s)` } }, 'update folder read')); }
-      if (j.backend === 'read') { const added = PJ.recordPc(j.project, j.source, b.ok, b.text || '', b.error); return send(res, 200, L.update(j.id, { status: b.ok ? 'done' : 'failed', error: b.error, result: { text: b.ok ? `${added.length} new note(s)` : '' } }, 'notes read')); } const text = b.text != null ? rejoin(b.text, j.held || []) : undefined; if (b.result && b.result.audio64) { fs.mkdirSync(IMG_DIR, { recursive: true }); const f = `${j.id}.wav`; fs.writeFileSync(path.join(IMG_DIR, f), Buffer.from(b.result.audio64, 'base64')); b.result.audio = `/api/img/${f}`; delete b.result.audio64; if (j.of) { const src = L.get(j.of); if (src) L.update(src.id, { result: { ...src.result, audio: b.result.audio } }, 'read aloud ready'); } }
+      if (j.backend === 'read') { const added = PJ.recordPc(j.project, j.source, b.ok, b.text || '', b.error); return send(res, 200, L.update(j.id, { status: b.ok ? 'done' : 'failed', error: b.error, result: { text: b.ok ? `${added.length} new note(s)` : '' } }, 'notes read')); } const text = b.text != null ? rejoin(b.text, j.held || []) : undefined; if (j.companion && b.ok) CP.add('them', b.text || '', { job: j.id }); else if (j.companion) CP.add('note', `No reply: ${b.error || 'the PC model did not answer'}`);
+        if (b.result && b.result.audio64) { fs.mkdirSync(IMG_DIR, { recursive: true }); const f = `${j.id}.wav`; fs.writeFileSync(path.join(IMG_DIR, f), Buffer.from(b.result.audio64, 'base64')); b.result.audio = `/api/img/${f}`; delete b.result.audio64; if (j.of) { const src = L.get(j.of); if (src) L.update(src.id, { result: { ...src.result, audio: b.result.audio } }, 'read aloud ready'); } }
         if (b.result && b.result.images64) { fs.mkdirSync(IMG_DIR, { recursive: true }); b.result.images = b.result.images64.map(im => { const f = `${j.id}-${im.name.replace(/[^\w.-]/g, '')}`; fs.writeFileSync(path.join(IMG_DIR, f), Buffer.from(im.data, 'base64')); return `/api/img/${f}`; }); delete b.result.images64; b.result.restyle = j.tool === 'image' && j.mode === 'model'; }
         const fin = afterChange(L.update(b.id, { status: b.ok ? 'done' : 'failed', result: { ...b.result, text }, error: b.error }, b.ok ? 'back from the PC' : 'PC reported a failure'));
         /* a Claude Code job that finished is itself an update, even if it forgot to write the file */
@@ -215,11 +232,13 @@ http.createServer(async (req, res) => {
     if (p.startsWith('/api/') && !authed(req)) return send(res, 401, { error: 'login' });
     const im = p.match(/^\/api\/img\/([\w.-]+)$/);
     if (im) { const f = path.join(IMG_DIR, im[1]); if (!fs.existsSync(f)) return send(res, 404, {}); res.writeHead(200, { 'content-type': f.endsWith('.png') ? 'image/png' : f.endsWith('.wav') ? 'audio/wav' : 'image/webp' }); return fs.createReadStream(f).pipe(res); }
+    const one = p.match(/^\/api\/jobs\/([a-f0-9]+)$/);
+    if (one && req.method === 'GET') { const j = L.get(one[1]); return j ? send(res, 200, j) : send(res, 404, {}); }
     const sp = p.match(/^\/api\/jobs\/([a-f0-9]+)\/speak$/);
     if (sp && req.method === 'POST') {
       /* read a job's answer aloud with the voice pack on the PC */
-      const j = L.get(sp[1]); const said = j && j.result && String(j.result.text || '').replace(/```[\s\S]*?```/g, ' ').replace(/[#*_`>|]/g, '').replace(/\[(.*?)\]\(.*?\)/g, '$1').trim(); if (!said) return send(res, 400, { error: 'nothing to read' });
-      const k = L.add({ tool: 'voice', mode: 'speak', backend: 'tts', runsOn: 'pc', label: 'Read aloud', text: said.slice(0, 7000), of: j.id, voice: SETTINGS.voice, speed: SETTINGS.speed, status: 'queued', quiet: true });
+      const sb = await body(req); const j = L.get(sp[1]); const said = j && j.result && speakable(j.result.text); if (!said) return send(res, 400, { error: 'nothing a person would read out' });
+      const k = L.add({ tool: 'voice', mode: 'speak', backend: 'tts', runsOn: 'pc', label: 'Read aloud', text: said, of: j.id, voice: sb.voice || SETTINGS.voice, speed: SETTINGS.speed, status: 'queued', quiet: true });
       if (!workerOnline()) PA.jumpstart(['worker']).catch(() => {});
       return send(res, 200, { ok: true, id: k.id });
     }
@@ -229,6 +248,18 @@ http.createServer(async (req, res) => {
       const b = await body(req); const j = L.get(rs[1]); const img = j && j.result && (j.result.images || [])[b.n || 0]; if (!img) return send(res, 404, {});
       const f = path.join(IMG_DIR, path.basename(img)); const data = `data:${f.endsWith('.png') ? 'image/png' : 'image/webp'};base64,${fs.readFileSync(f).toString('base64')}`;
       return send(res, 200, makeJob({ text: `${b.style || 'Realistic, detailed, natural lighting'}. Keep the same character, outfit, pose and framing. ${j.text}`, tool: 'image', mode: 'edit', area: j.area, autonomy: 'draft', args: { image_url: data }, project: j.project }));
+    }
+    if (p === '/api/companion' && req.method === 'GET') return send(res, 200, { ...CP.state(), waiting: L.list(80).some(j => j.companion && ['queued', 'running'].includes(j.status)), pc: workerOnline() });
+    if (p === '/api/companion/setup' && req.method === 'POST') { const b = await body(req); return send(res, 200, { setup: CP.setup(b) }); }
+    if (p === '/api/companion/clear' && req.method === 'POST') { CP.clear(); return send(res, 200, { ok: true }); }
+    if (p === '/api/companion/say' && req.method === 'POST') {
+      /* one turn: his line goes into the history, the PC model gets the recent conversation; no filters, PC only */
+      const b = await body(req); const text = String(b.text || '').trim(); if (!text) return send(res, 400, { error: 'say something' });
+      const mode = CP.MODES.includes(b.mode) ? b.mode : 'chat'; CP.add('me', text, { mode });
+      const rq = CP.request(mode);
+      const j = L.add({ tool: 'companion', mode, backend: 'pc-model', runsOn: 'pc', label: `Companion: ${mode}`, text, system: rq.system, messages: rq.messages, maxTokens: 600, companion: true, status: 'queued', quiet: true });
+      if (!workerOnline()) PA.jumpstart(['worker', 'model']).catch(() => {});
+      return send(res, 200, { ok: true, id: j.id });
     }
     if (p === '/api/settings' && req.method === 'GET') return send(res, 200, SETTINGS);
     if (p === '/api/settings' && req.method === 'POST') { const b = await body(req); if (['complex', 'all', 'off'].includes(b.copilotReview)) SETTINGS.copilotReview = b.copilotReview; if (b.voice && /^[a-z]{2}_[a-z]+$/.test(b.voice)) SETTINGS.voice = b.voice; if (b.speed) SETTINGS.speed = Math.max(0.6, Math.min(1.6, +b.speed || 1)); saveSettings(); return send(res, 200, SETTINGS); }

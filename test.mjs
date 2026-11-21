@@ -64,6 +64,13 @@ SPLIT.push(
   ['content-limit notes left off cards', PJx.cards().every(c => JSON.stringify(c.rules || []).search(/sexual|off limits|tasteful/i) < 0)],
   ['content-limit notes left off live notes', PJx.extract('## Known issues\n- Tasteful: the camera never looks from below\n- Room clipping in windows').length === 2 && PJx.extract('## Known issues\n- Tasteful: the camera never looks from below\n- Room clipping in windows').filter(i => PJx.allowed(i.text)).length === 1],
 );
+process.env.PORT = '0'; process.env.DATA_DIR = process.env.DATA_DIR || (await import('os')).tmpdir() + '/brenebase-test';
+const { speakable } = await import('./server.mjs');
+SPLIT.push(
+  ['voice skips actions, keeps words', speakable('*sighs* Yeah, that sucks.') === 'Yeah, that sucks.'],
+  ['voice skips code, links and paths', !/const|https|server\.mjs/.test(speakable('Run this:\n```js\nconst a = 1;\n```\nsee https://x.dev and C:\\a\\b\\server.mjs'))],
+  ['code or JSON only: no voice job at all', speakable('```\ncode\n```') === '' && speakable('{"a": 1}') === ''],
+);
 let sOk = 0; for (const [n, ok] of SPLIT) { if (ok) sOk++; console.log(`${ok ? 'ok  ' : 'MISS'} split: ${n}`); }
 pass += sOk; const total = CASES.length + SPLIT.length;
 console.log(`\n${pass}/${total} as expected`);
