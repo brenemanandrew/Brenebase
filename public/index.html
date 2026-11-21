@@ -77,7 +77,7 @@ function fillModes(sel) { const t = CAT.tools.find(t => t.id === $('tool').value
 function showDoes() {
   const t = CAT.tools.find(t => t.id === $('tool').value), m = t.modes[$('mode').value];
   $('does').textContent = m.does;
-  const need = { 'make3d:generate': ['image_url', 'Picture link (optional)'], 'make3d:retexture': ['model_url', 'Model link'], 'make3d:rig': ['model_url', 'Model link'], 'make3d:process': ['in', 'Model file on the PC'], 'coder:build': ['repo', 'Repo (owner/name)'], 'coder:fix': ['repo', 'Repo (owner/name)'], 'coder:brief': ['repo', 'Repo (owner/name)'] }[`${t.id}:${$('mode').value}`];
+  const need = { 'make3d:generate': ['image_url', 'Picture link (optional)'], 'image:edit': ['image_url', 'Link to the picture to change'], 'make3d:retexture': ['model_url', 'Model link'], 'make3d:rig': ['model_url', 'Model link'], 'make3d:process': ['in', 'Model file on the PC'], 'coder:build': ['repo', 'Repo (owner/name)'], 'coder:fix': ['repo', 'Repo (owner/name)'], 'coder:brief': ['repo', 'Repo (owner/name)'] }[`${t.id}:${$('mode').value}`];
   $('extra').innerHTML = need ? `<div class="row"><input id="x_${need[0]}" placeholder="${esc(need[1])}" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--line);background:#0f1116;color:var(--text)"></div>` : '';
 }
 $('tool').onchange = () => fillModes(); $('mode').onchange = showDoes;
@@ -116,7 +116,7 @@ function jobCard(j) {
   <div class="dim">${esc((j.text || '').slice(0, 160))}</div>
   ${j.error ? `<p class="st-failed">${esc(j.error)}</p>` : ''}
   ${r.link ? `<p><a href="${esc(r.link)}" target="_blank" style="color:var(--acc)">Open</a></p>` : ''}
-  ${r.thumb ? `<img src="${esc(r.thumb)}" style="max-width:100%;border-radius:8px">` : ''}
+  ${r.images && r.images.length ? r.images.map(u => `<a href="${esc(u)}" target="_blank"><img src="${esc(u)}" style="max-width:100%;border-radius:8px;margin:4px 0"></a>`).join('') + '<div class="dim">Meshy links expire after a few days: save the ones you want.</div>' : r.thumb ? `<img src="${esc(r.thumb)}" style="max-width:100%;border-radius:8px">` : ''}
   ${r.branch ? `<p class="dim">Branch: ${esc(r.branch)}</p>` : ''}
   ${r.review ? `<div class="card" style="margin:8px 0;border-color:${r.review.verdict === 'ok' ? 'var(--ok)' : r.review.verdict === 'fixed' ? 'var(--warn)' : 'var(--bad)'}"><b>Claude Opus check: ${esc({ ok: 'no changes needed', fixed: 'corrected', unreliable: 'too wrong to use', unchecked: 'not checked' }[r.review.verdict] || r.review.verdict)}</b><div class="dim">${esc(r.review.note || '')}</div>${(r.review.corrections || []).map(c => `<div class="mode"><span class="st-failed">was:</span> ${esc(c.was)}<br><span class="st-done">now:</span> ${esc(c.now)}<br><span class="dim">why: ${esc(c.why)}</span></div>`).join('')}${r.original && r.original !== r.text ? `<details><summary class="dim">Copilot's original answer</summary><pre>${esc(r.original)}</pre></details>` : ''}</div>` : ''}
   ${r.relay ? `<p class="dim">Copy this into Copilot, then paste its answer below.</p><div class="row"><button class="sm" onclick="navigator.clipboard.writeText(document.getElementById('rp_${j.id}').textContent)">Copy</button><a class="sm" href="${esc(r.link)}" target="_blank" style="color:var(--acc)">Open Copilot</a></div><pre id="rp_${j.id}">${esc(r.text)}</pre><textarea id="ra_${j.id}" placeholder="Paste Copilot's answer here" style="min-height:70px"></textarea><div class="row"><button class="sm" onclick="pasteBack('${j.id}')">Save answer</button></div>` : r.text ? `<pre>${esc(r.text)}</pre>` : ''}

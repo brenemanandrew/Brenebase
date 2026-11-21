@@ -50,15 +50,19 @@ export function ruleRoute(thought) {
   /* the 3D and motion rules beat raw word counts when they fire */
   const is3d = ['model', 'mesh', '3d', 'meshy', 'blender', 'glb', 'fbx', 'asset', 'prop', 'texture', 'rig', 'decimate', 'retexture', 'cel shade', 'statue'].some(w => has(t, w)) || /\.(glb|fbx|obj|vrm|blend)\b/.test(t);
   const isMotion = ['animation', 'animate', 'mocap', 'motion', 'gesture', 'retarget', 'clip', 'dance', 'walk cycle', 'act it out', 'on camera', 'fidget'].some(w => has(t, w)) || (best && best.tool === 'motion');
-  const motion = isMotion && pickMotion(t);
-  const m3 = !motion && is3d && pick3d(t);
-  if (motion) { best = { tool: 'motion', mode: motion[0], score: 5 }; why = motion[1]; target = motion[2]; }
+  /* a 2D picture (concept art, sheet, illustration) is the Images tool, not 3D and not the planner */
+  const twoD = ['illustration', 'concept art', 'concept image', 'character sheet', 'reference sheet', 'turnaround', 'realistic image', 'anime looking', 'drawing of', 'picture of', 'image of', 'portrait of', 'key art', 'artwork', 'mood board', '2d'].some(w => has(t, w)) && !['3d model', 'model of', 'glb', 'mesh', 'rig', 'from this picture', 'from a photo', 'image to 3d'].some(w => has(t, w));
+  if (twoD) { const ed = ['edit this image', 'edit the image', 'change this picture', 'change the image', 'restyle'].some(w => has(t, w)); best = { tool: 'image', mode: ed ? 'edit' : 'concept', score: 5 }; why = ed ? 'Changing a picture: Meshy image to image.' : 'A 2D picture: Meshy concept art (or Copilot by copy and paste).'; }
+  const motion = !twoD && isMotion && pickMotion(t);
+  const m3 = !twoD && !motion && is3d && pick3d(t);
+  if (twoD) { /* set above */ }
+  else if (motion) { best = { tool: 'motion', mode: motion[0], score: 5 }; why = motion[1]; target = motion[2]; }
   else if (m3) { best = { tool: 'make3d', mode: m3[0], score: 5 }; why = m3[1]; }
 
   /* feelings words with no task words go to the Companion, even if a work word is present ("my boss is a jerk") */
   const feel = AREAS.personal.words.filter(w => has(t, w)).length;
   const taskish = scores.some(s => s.tool !== 'companion' && s.score >= 2);
-  if (feel && !taskish && !motion && !m3) {
+  if (feel && !taskish && !motion && !m3 && !twoD) {
     const c = scores.find(s => s.tool === 'companion');
     best = c ? { ...c, score: c.score + 2 } : { tool: 'companion', mode: 'vent', score: 2 };
     why = 'Sounds like feelings, not a task: kept on your PC model.';

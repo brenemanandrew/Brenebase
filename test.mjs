@@ -22,6 +22,7 @@ const CASES = [
   ['What makes a good core loop for a cozy life sim', 'expert:game'],
   ['Deploy brenai', 'ship:deploy'],
   ['Open the overtime kiosk', 'workapp:open'],
+  ['I want a t-pose illustration front and back of my character wizra, both a realistic image and a cel shaded anime looking image for concept', 'image:concept'],
 ];
 let pass = 0;
 for (const [t, want] of CASES) {

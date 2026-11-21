@@ -50,7 +50,7 @@ const saveSettings = () => { fs.mkdirSync(path.dirname(SETFILE), { recursive: tr
 
 /* a Copilot answer arrived (pasted back or automatic): check it with Claude Opus first if it needs it */
 async function copilotAnswer(j, answer, via) {
-  if (!needsReview(j, answer, SETTINGS.copilotReview)) return L.update(j.id, { status: 'done', result: { ...j.result, text: answer, relay: false, review: null } }, `answer from Copilot (${via}), not reviewed (${SETTINGS.copilotReview === 'off' ? 'review is off' : 'simple'})`);
+  if (j.tool === 'image' || !needsReview(j, answer, SETTINGS.copilotReview)) return L.update(j.id, { status: 'done', result: { ...j.result, text: answer, relay: false, review: null } }, `answer from Copilot (${via}), not reviewed (${SETTINGS.copilotReview === 'off' ? 'review is off' : 'simple'})`);
   L.update(j.id, { status: 'reviewing', result: { ...j.result, relay: false, original: answer } }, 'Claude Opus is checking Copilot\'s answer');
   try {
     const rv = await reviewCopilot(j, answer, claude);
@@ -245,7 +245,12 @@ http.createServer(async (req, res) => {
       if (m[2] === 'cancel') return send(res, 200, L.update(j.id, { status: 'cancelled' }, 'cancelled'));
       if (m[2] === 'approve' && j.status === 'waiting' && j.backend === 'split') return send(res, 200, startMerge(j));
       if (m[2] === 'approve' && j.status === 'waiting') return send(res, 200, afterChange(await start(L.update(j.id, {}, 'OK given'))));
-      if (m[2] === 'refresh' && j.backend === 'meshy' && j.result && j.result.task) { const s = await meshyStatus(j.result.meshy, j.result.task); const done = s.status === 'SUCCEEDED', bad = ['FAILED', 'CANCELED', 'EXPIRED'].includes(s.status); return send(res, 200, afterChange(L.update(j.id, { status: done ? 'done' : bad ? 'failed' : 'running', result: { ...j.result, progress: s.progress, models: s.model_urls, thumb: s.thumbnail_url } }, `Meshy: ${s.status} ${s.progress ?? ''}`))); }
+      if (m[2] === 'refresh' && j.backend === 'meshy' && j.result && j.result.task) {
+        const all = await Promise.all((j.result.tasks || [j.result.task]).map(id => meshyStatus(j.result.meshy, id)));
+        const done = all.every(x => x.status === 'SUCCEEDED'), bad = all.some(x => ['FAILED', 'CANCELED', 'EXPIRED'].includes(x.status)), s = all[0];
+        const images = all.flatMap(x => x.image_urls || []);
+        return send(res, 200, afterChange(L.update(j.id, { status: done ? 'done' : bad ? 'failed' : 'running', result: { ...j.result, progress: Math.min(...all.map(x => x.progress || 0)), models: s.model_urls, thumb: s.thumbnail_url, images } }, `Meshy: ${all.map(x => x.status).join(', ')}`)));
+      }
       return send(res, 200, j);
     }
     if (p.startsWith('/api/')) return send(res, 404, { error: 'no such route' });

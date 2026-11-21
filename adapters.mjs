@@ -59,7 +59,11 @@ export function brief(job, projectNotes = '') {
 }
 
 /* ---- cloud backends ---- */
+export const keyHelp = e => e && e.status === 401 ? new Error('Claude rejected the API key (401). Make a new key at console.anthropic.com > API Keys (it starts with sk-ant-api03-), put it in the BRENEBASE_ANTHROPIC_KEY repo secret, and run the deploy again.') : e;
 export async function runClaude(job, claude, projectNotes = '') {
+  try { return await runClaudeInner(job, claude, projectNotes); } catch (e) { throw keyHelp(e); }
+}
+async function runClaudeInner(job, claude, projectNotes = '') {
   if (!claude) throw new Error('No ANTHROPIC_API_KEY on the hub, so the Planner and Expert cannot run in the cloud. Set it, or switch this job to the PC model.');
   const { out, held } = split(job.text);
   const r = await claude.beta.messages.create({
@@ -82,8 +86,29 @@ async function meshy(method, p, body) {
   return j;
 }
 /* Starts a Meshy task. Field names for image, retexture and rigging come from Meshy's docs as last known; check them on the first real run. */
+/* styles asked for in one request: one picture per style */
+function styles(t) {
+  const out = [];
+  if (/\brealistic|photoreal|photo-real|lifelike\b/i.test(t)) out.push('realistic, detailed, natural lighting');
+  if (/\b(cel[- ]?shad\w*|anime|toon|cartoon)\b/i.test(t)) out.push('cel-shaded anime style, clean ink outlines, flat colour shading');
+  return out.length ? out : [''];
+}
+function imagePrompt(job, style) {
+  const t = split(job.text).out;
+  const sheet = /front and back|turnaround|character sheet|reference sheet|t-?pose/i.test(t) ? ' Character turnaround sheet: full body front view and back view side by side, T-pose, arms straight out, plain neutral background, same character in both views.' : '';
+  return `${t}${sheet}${style ? ' Style: ' + style + '.' : ''}`.slice(0, 1000);
+}
 export async function runMeshy(job) {
   const a = job.args || {};
+  if (job.tool === 'image') {
+    const model = process.env.MESHY_IMAGE_MODEL || 'gpt-image-2-5-sunburst';
+    const tasks = [];
+    if (job.mode === 'edit') {
+      if (!a.image_url) throw new Error('Edit an image needs a picture link');
+      tasks.push((await meshy('POST', 'v1/image-to-image', { ai_model: model, prompt: imagePrompt(job, ''), reference_image_urls: [a.image_url] })).result);
+    } else for (const st of styles(job.text)) tasks.push((await meshy('POST', 'v1/text-to-image', { ai_model: model, prompt: imagePrompt(job, st) })).result);
+    return { meshy: job.mode === 'edit' ? 'v1/image-to-image' : 'v1/text-to-image', task: tasks[0], tasks };
+  }
   if (job.mode === 'generate' && a.image_url) return { meshy: 'v1/image-to-3d', task: (await meshy('POST', 'v1/image-to-3d', { image_url: a.image_url })).result };
   if (job.mode === 'generate') return { meshy: 'v2/text-to-3d', task: (await meshy('POST', 'v2/text-to-3d', { mode: 'preview', prompt: split(job.text).out.slice(0, 600) })).result };
   if (job.mode === 'retexture') return { meshy: 'v1/retexture', task: (await meshy('POST', 'v1/retexture', { model_url: a.model_url, text_style_prompt: split(job.text).out.slice(0, 600) })).result };
@@ -122,7 +147,7 @@ export function copilotFit(job, project) {
 export async function runCopilot(job, project) {
   const fit = copilotFit(job, project);
   if (!fit.ok) throw new Error(`Not sent to Copilot: ${fit.why.join('; ')}. Pick Claude or the PC model instead.`);
-  const system = `${STYLE}\n\n${{ summarize: 'Summarize into the points that matter, shortest first.', rewrite: 'Rewrite for clarity and correct grammar. Keep the meaning and the voice.', draft: 'Write a first draft he can edit.', research: 'Answer plainly, say what you are unsure of.' }[job.mode] || ''}`;
+  const system = job.tool === 'image' ? 'Make this picture. If it asks for several styles, make one picture per style.' : `${STYLE}\n\n${{ summarize: 'Summarize into the points that matter, shortest first.', rewrite: 'Rewrite for clarity and correct grammar. Keep the meaning and the voice.', draft: 'Write a first draft he can edit.', research: 'Answer plainly, say what you are unsure of.' }[job.mode] || ''}`;
   if (process.env.COPILOT_TOKEN) {
     const r = await fetch('https://models.github.ai/inference/chat/completions', { method: 'POST', headers: { authorization: `Bearer ${process.env.COPILOT_TOKEN}`, 'content-type': 'application/json', accept: 'application/vnd.github+json' }, body: JSON.stringify({ model: process.env.COPILOT_MODEL || 'openai/gpt-4.1', messages: [{ role: 'system', content: system }, { role: 'user', content: job.text }] }) });
     const j = await r.json().catch(() => ({}));
@@ -151,6 +176,9 @@ const REVIEW_SCHEMA = {
   },
 };
 export async function reviewCopilot(job, answer, claude) {
+  try { return await reviewInner(job, answer, claude); } catch (e) { throw keyHelp(e); }
+}
+async function reviewInner(job, answer, claude) {
   if (!claude) return { verdict: 'unchecked', corrected: answer, corrections: [], note: 'Not checked: Brenebase has no ANTHROPIC_API_KEY, so Claude Opus could not review this.' };
   const r = await claude.beta.messages.create({
     model: 'claude-opus-5-5', max_tokens: 16000,

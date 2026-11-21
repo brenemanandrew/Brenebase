@@ -84,6 +84,16 @@ export const TOOLS = [
     },
   },
   {
+    id: 'image', type: 'make2d', name: 'Images', runsOn: 'meshy', backend: 'meshy',
+    what: '2D pictures: concept art, character sheets, turnarounds (front and back), style tests. Meshy makes them (spends credits, waits for OK), or your personal Copilot by copy and paste.',
+    built: ['Meshy text to image and image to image (on your account)', 'Microsoft Copilot image creation'],
+    modes: {
+      concept: { label: 'Concept art (Meshy)', does: 'New picture(s) from words. Asking for several styles (realistic and anime, for example) makes one picture per style.', words: ['illustration', 'concept art', 'concept image', 'image of', 'picture of', 'drawing of', 'character sheet', 'reference sheet', 'turnaround', 'front and back', 'realistic image', 'anime looking', 'anime style image', '2d', 'portrait of', 'artwork', 'key art', 'mood board'] },
+      edit:    { label: 'Edit an image (Meshy)', does: 'Change a picture you give it (link): pose, outfit, proportions, style.', words: ['edit this image', 'edit the image', 'change this picture', 'change the image', 'make this picture', 'from this image', 'restyle'] },
+      copilot: { label: 'Image in Copilot', does: 'Copilot makes the picture (free, copy and paste). SFW only.', backend: 'copilot', runsOn: 'cloud', words: ['image in copilot', 'copilot image', 'copilot picture'] },
+    },
+  },
+  {
     id: 'make3d', type: 'make3d', name: '3D', runsOn: 'meshy', backend: 'meshy',
     what: 'Models and assets. The mode picks Meshy, Blender, code or the checker (see route.mjs pick3d for the rules).',
     built: ['Meshy API (text, image, retexture, rigging)', 'pipeline/scripts/*.py (29 Blender scripts: fit, decimate, convert, rig, morph)', 'pipeline/jstest/piece.mjs + psheet.py (render checker)', 'brenai/public/props.js (38 code-built props)', 'Brenerig (brenerig.fly.dev)'],
