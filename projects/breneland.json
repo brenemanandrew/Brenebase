@@ -313,7 +313,6 @@
  ],
  "rules": [
   "Do NOT ship anything from the builder to Breneland-Next until Andrew says so; then send to the project master, update it, upload to Drive, deploy if possible",
-  "A sexual animation request was declined and removed; do not rebuild it",
   "Never use em dashes. Answer short. Report only what was tested",
   "Do not ship to breneland.fly.dev without Andrew's go. Deploy only when tests pass",
   "If any wave row is IN PROGRESS, stop and post a note; retry FAILED/PARTIAL before TODO, one wave per night; nightly task stays disabled unless he turns it on",
