@@ -27,7 +27,7 @@ h3{margin:18px 0 6px}.mode{margin:4px 0 4px 10px}
 <header><b>Brenebase</b><span class="dim" id="lights"><span id="adot" class="dot"></span> PC <span id="mdot" class="dot"></span> Model <span id="wdot" class="dot"></span> Worker</span>
 <nav><button data-tab="send" class="on">Send</button><button data-tab="jobs">Jobs</button><button data-tab="companion" id="cpTab">Companion</button><button data-tab="projects">Projects</button><button data-tab="pc">PC</button><button data-tab="tools">Tools</button></nav></header>
 <main>
-<div id="login" class="card"><p>Password</p><div class="row"><input id="pw" type="password" style="flex:1;padding:9px;border-radius:8px;border:1px solid var(--line);background:#0f1116;color:var(--text)"><button class="go" id="loginBtn">Go</button></div></div>
+<div id="login" class="card"><p>Password</p><div class="row"><input id="pw" type="password" style="flex:1;padding:9px;border-radius:8px;border:1px solid var(--line);background:#0f1116;color:var(--text)"><button class="go" id="loginBtn">Go</button></div><div id="loginMsg" class="st-failed"></div></div>
 
 <section id="send">
   <textarea id="thought" placeholder="Dump the thought here. The hub picks where it goes."></textarea>
@@ -98,7 +98,13 @@ const api = async (p, b) => { const r = await fetch(p, b ? { method: 'POST', hea
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => { document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b)); for (const s of ['send', 'jobs', 'companion', 'projects', 'pc', 'tools']) $(s).style.display = s === b.dataset.tab ? '' : 'none'; if (b.dataset.tab === 'jobs') jobs(); if (b.dataset.tab === 'projects') projects(); if (b.dataset.tab === 'pc') pc(); if (b.dataset.tab === 'companion') companion(); });
-$('loginBtn').onclick = async () => { await api('/api/login', { password: $('pw').value }).catch(() => {}); $('login').style.display = 'none'; boot(); };
+$('loginBtn').onclick = async () => {
+  const r = await fetch('/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: $('pw').value }) }).catch(() => null);
+  if (!r) { $('loginMsg').textContent = 'Brenebase did not answer. Check your connection.'; return; }
+  if (r.status === 401) { $('loginMsg').textContent = 'Wrong password. It is the BRENEBASE_PASSWORD secret in GitHub.'; $('pw').select(); return; }
+  $('loginMsg').textContent = ''; $('login').style.display = 'none'; boot();
+};
+$('pw').onkeydown = e => { if (e.key === 'Enter') $('loginBtn').onclick(); };
 
 function fillModes(sel) { const t = CAT.tools.find(t => t.id === $('tool').value); $('mode').innerHTML = Object.entries(t.modes).map(([k, m]) => `<option value="${k}">${esc(m.label)}</option>`).join(''); if (sel && t.modes[sel]) $('mode').value = sel; showDoes(); }
 function showDoes() {

@@ -43,7 +43,7 @@ jobs:
           MK: ${{ secrets.BRENEBASE_MESHY_KEY }}
         run: |
           # each value passed whole and quoted, so symbols or spaces in a secret cannot change it
-          set -- "HUB_PASSWORD=$PW" "HUB_WORKER_TOKEN=$(printf '%s' "$PK" | tr -d '\r\n')"
+          set -- "HUB_PASSWORD=$(printf '%s' "$PW" | tr -d '\r\n' | sed 's/^ *//;s/ *$//')" "HUB_WORKER_TOKEN=$(printf '%s' "$PK" | tr -d '\r\n')"
           [ -n "$AK" ] && set -- "$@" "ANTHROPIC_API_KEY=$(printf '%s' "$AK" | tr -d ' \r\n')"
           [ -n "$TS" ] && set -- "$@" "TS_AUTHKEY=$TS"
           [ -n "$TH" ] && set -- "$@" "PC_TAILNET_HOST=$TH"

@@ -35,7 +35,7 @@ import { vet } from './vet.mjs';
 import * as CP from './companion.mjs';
 
 const PORT = +process.env.PORT || 8080;
-const PASS = process.env.HUB_PASSWORD || '';
+const PASS = (process.env.HUB_PASSWORD || '').trim();
 /* an unconfigured copy is closed, not open: on Fly it refuses to start without its password and PC key */
 if (process.env.FLY_APP_NAME && (!PASS || !process.env.HUB_WORKER_TOKEN)) { console.error('Refusing to start: set HUB_PASSWORD and HUB_WORKER_TOKEN as Fly secrets.'); process.exit(1); }
 const WTOKEN = (process.env.HUB_WORKER_TOKEN || '').trim();
@@ -191,7 +191,7 @@ function startMerge(par) {
 http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://x'), p = u.pathname;
   try {
-    if (p === '/api/login' && req.method === 'POST') { const b = await body(req); if (PASS && b.password !== PASS) return send(res, 401, { error: 'wrong password' }); res.setHeader('set-cookie', `hub=${SESSION}; HttpOnly; Path=/; Max-Age=15552000; SameSite=Lax${process.env.FLY_APP_NAME ? '; Secure' : ''}`); return send(res, 200, { ok: true }); }
+    if (p === '/api/login' && req.method === 'POST') { const b = await body(req); if (PASS && String(b.password || '').trim() !== PASS) return send(res, 401, { error: 'wrong password' }); res.setHeader('set-cookie', `hub=${SESSION}; HttpOnly; Path=/; Max-Age=15552000; SameSite=Lax${process.env.FLY_APP_NAME ? '; Secure' : ''}`); return send(res, 200, { ok: true }); }
 
     /* ---- files the PC installer downloads (no secrets in any of them) ---- */
     const PCFILES = { 'worker/render-brenai.cjs': 'worker/render-brenai.cjs', 'pc/brenebase-agent.mjs': 'pc/brenebase-agent.mjs', 'pc/install-agent.ps1': 'pc/install-agent.ps1', 'worker/hub-worker.mjs': 'worker/hub-worker.mjs', 'worker/blender_ops.py': 'worker/blender_ops.py', 'parts.mjs': 'parts.mjs' };
