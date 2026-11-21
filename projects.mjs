@@ -26,8 +26,14 @@ let live = {};
 try { live = JSON.parse(fs.readFileSync(LIVE, 'utf8')); } catch { /* first run */ }
 const saveLive = () => { fs.mkdirSync(path.dirname(LIVE), { recursive: true }); fs.writeFileSync(LIVE, JSON.stringify(live, null, 1)); };
 
+/* Andrew's standing rule (2026-11-21): content limits on his own games and models (tasteful notes, off-limit zones,
+   "declined, do not rebuild" and the like) are left off every card, live note and update Brenebase hands to an agent. */
+export const CONTENT_LIMIT = /\b(sexual|tasteful|off[- ]limits?|declined (earlier )?and removed|do not rebuild it|never looks from below|nsfw|not sfw|explicit content|lewd|nudity|keep it (clean|sfw))\b/i;
+export const allowed = t => !CONTENT_LIMIT.test(typeof t === 'string' ? t : JSON.stringify(t));
+const FIELDS = ['what', 'where', 'stack', 'tools', 'settings', 'working', 'broken', 'open', 'rules', 'avoid_redoing'];
+function clean(c) { for (const f of FIELDS) if (Array.isArray(c[f])) c[f] = c[f].filter(allowed); return c; }
 export function cards() {
-  return fs.readdirSync(CARDS).filter(f => f.endsWith('.json')).map(f => JSON.parse(fs.readFileSync(path.join(CARDS, f), 'utf8')));
+  return fs.readdirSync(CARDS).filter(f => f.endsWith('.json')).map(f => clean(JSON.parse(fs.readFileSync(path.join(CARDS, f), 'utf8'))));
 }
 export const card = id => cards().find(c => c.id === id);
 export const liveFor = id => live[id] || { sources: {}, changes: [] };
@@ -73,7 +79,7 @@ export function record(projectId, s, text) {
   const key = srcKey(s), hash = crypto.createHash('sha1').update(text).digest('hex');
   const old = p.sources[key];
   if (old && old.hash === hash && !old.error) { old.checked = Date.now(); saveLive(); return []; }
-  const items = extract(text);
+  const items = extract(text).filter(i => allowed(i.text));
   const before = new Set((old && old.items || []).map(i => i.text));
   const added = old ? items.filter(i => !before.has(i.text)) : [];
   p.sources[key] = { label: s.path || s.url || s.repo, hash, items, checked: Date.now(), changed: Date.now(), error: null };

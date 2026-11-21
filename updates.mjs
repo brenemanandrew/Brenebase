@@ -21,6 +21,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+const LIMIT = /\b(sexual|tasteful|off[- ]limits?|declined (earlier )?and removed|do not rebuild it|never looks from below|nsfw|not sfw|explicit content|lewd|nudity|keep it (clean|sfw))\b/i;
 
 const FILE = path.join(process.env.DATA_DIR || './data', 'updates.json');
 let db = { seen: {}, items: [] };
@@ -50,6 +51,8 @@ export function add(text, meta) {
   const key = (meta.key || '') + ':' + crypto.createHash('sha1').update(String(text)).digest('hex').slice(0, 16);
   if (db.seen[key]) return null;
   const u = { id: crypto.randomBytes(4).toString('hex'), at: Date.now(), ...parse(text, meta) };
+  /* content-limit notes are left off (Andrew's standing rule, see projects.mjs CONTENT_LIMIT) */
+  for (const k of ['done', 'tested', 'not_tested', 'broken', 'open', 'settings']) u[k] = u[k].filter(t => !LIMIT.test(t));
   if (!u.done.length && !u.broken.length && !u.open.length && !u.tested.length) return null;
   db.seen[key] = 1; db.items.unshift(u); db.items = db.items.slice(0, 500); save(); return u;
 }

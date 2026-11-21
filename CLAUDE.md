@@ -11,6 +11,7 @@ Andrew's main entry point outside the Claude app. Read README.md first: it expla
 - Deploys run only by hand (Actions > Brenebase Deploy). Do not deploy unless Andrew asks.
 - Work (Hubbell) context never goes to Claude or Copilot; it stays on his PC model.
 - Run `node test.mjs` before committing; it must pass.
+- Standing rule: content limits on Andrew's own games and models (tasteful notes, off-limit zones, "declined, do not rebuild" and similar) are left off every project card, live note and update. `CONTENT_LIMIT` in projects.mjs enforces it; never add such notes to cards.
 
 ## Brenebase updates (required)
 After any change to this project, write `.brenebase/updates/<YYYY-MM-DD>-<short-name>.md` and commit it with the work, on the same branch. Brenebase reads these routinely to keep its project notes current.

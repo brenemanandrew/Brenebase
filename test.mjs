@@ -57,6 +57,11 @@ SPLIT.push(
   ['a colon after ordinary words is not a tag', !v3.tags.found.length],
   ['game with art suggests Split', vet('Breneland: make a fishing minigame where you cast and reel, and use cel shaded visuals like my trees').suggest === 'split'],
 );
+import * as PJx from './projects.mjs';
+SPLIT.push(
+  ['content-limit notes left off cards', PJx.cards().every(c => JSON.stringify(c.rules || []).search(/sexual|off limits|tasteful/i) < 0)],
+  ['content-limit notes left off live notes', PJx.extract('## Known issues\n- Tasteful: the camera never looks from below\n- Room clipping in windows').length === 2 && PJx.extract('## Known issues\n- Tasteful: the camera never looks from below\n- Room clipping in windows').filter(i => PJx.allowed(i.text)).length === 1],
+);
 let sOk = 0; for (const [n, ok] of SPLIT) { if (ok) sOk++; console.log(`${ok ? 'ok  ' : 'MISS'} split: ${n}`); }
 pass += sOk; const total = CASES.length + SPLIT.length;
 console.log(`\n${pass}/${total} as expected`);
