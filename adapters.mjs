@@ -60,17 +60,17 @@ export function brief(job, projectNotes = '') {
 
 /* ---- cloud backends ---- */
 export const keyHelp = e => e && e.status === 401 ? new Error('Claude rejected the API key (401). Make a new key at console.anthropic.com > API Keys (it starts with sk-ant-api03-), put it in the BRENEBASE_ANTHROPIC_KEY repo secret, and run the deploy again.') : e;
-export async function runClaude(job, claude, projectNotes = '') {
-  try { return await runClaudeInner(job, claude, projectNotes); } catch (e) { throw keyHelp(e); }
+export async function runClaude(job, claude, projectNotes = '', earlier = []) {
+  try { return await runClaudeInner(job, claude, projectNotes, earlier); } catch (e) { throw keyHelp(e); }
 }
-async function runClaudeInner(job, claude, projectNotes = '') {
+async function runClaudeInner(job, claude, projectNotes = '', earlier = []) {
   if (!claude) throw new Error('No ANTHROPIC_API_KEY on the hub, so the Planner and Expert cannot run in the cloud. Set it, or switch this job to the PC model.');
   const { out, held } = split(job.text);
   const r = await claude.beta.messages.create({
     model: process.env.HUB_MODEL || 'claude-opus-5-5', max_tokens: 16000,
     betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
     output_config: { effort: job.tool === 'expert' ? 'high' : 'medium' },
-    system: systemFor(job.tool, job.mode) + (projectNotes ? '\n\n' + projectNotes : ''), messages: [{ role: 'user', content: out }],
+    system: systemFor(job.tool, job.mode) + (projectNotes ? '\n\n' + projectNotes : ''), messages: [...earlier.map(m => ({ role: m.role, content: split(m.content).out })), { role: 'user', content: out }],
   });
   if (r.stop_reason === 'refusal') throw new Error('Claude declined this one.');
   const text = r.content.filter(b => b.type === 'text').map(b => b.text).join('\n');

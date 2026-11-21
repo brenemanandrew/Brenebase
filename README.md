@@ -73,6 +73,14 @@ This is the rule the router follows (`pick3d` and `pickMotion` in `route.mjs`):
   2. Set `BRENAI_COOKIES` to a curl cookie jar for a logged-in Brenai player, the same kind the picture pack generator uses.
   3. Optionally set `BRENAI_URL` (default https://brenai.fly.dev).
 
+## Tabs
+- **A tab bar** sits under the menu on the Send and Jobs screens: **All**, your tabs, and **+**.
+- **Each tab is a project or a named conversation.** When you make one, you can pick a project. Everything sent from that tab is then tied to the project, unless a tag at the start of the message names a different one.
+- **The Jobs list** shows only the open tab's work. All shows everything.
+- **Follow-ups remember the tab:** Claude and the PC model get the tab's last 6 questions and answers as a real conversation.
+- **Closing a tab** (the x on the open tab) keeps its jobs under All.
+- **Companion conversations** have their own tabs, with **+** for a new one. Each conversation has its own history, and the avatar is shared.
+
 ## Companion (the one you can rage at)
 - **A Companion tab** for a real back-and-forth chat on your PC model. It never goes to Claude or Copilot, and has no filters.
 - **First time you open it, you set it up:** name, skin, hair, eyes, top, shirt and background colours (with a live preview), a voice, an optional "who they are" note, and whether replies are read aloud. **Edit look** changes it later. The tab takes the companion's name.

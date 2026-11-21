@@ -18,6 +18,7 @@ select{background:var(--card);color:var(--text);border:1px solid var(--line);bor
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin:10px 0}
 .dim{color:var(--dim);font-size:14px}.tag{font-size:12px;border:1px solid var(--line);border-radius:6px;padding:1px 6px;color:var(--dim)}
 .st-waiting{color:var(--warn)}.st-done{color:var(--ok)}.st-failed{color:var(--bad)}.st-queued,.st-running{color:var(--acc)}.st-held,.st-cancelled{color:var(--dim)}
+.tab{background:none;border:1px solid var(--line);color:var(--dim);border-radius:8px 8px 0 0;padding:6px 10px;white-space:nowrap;font:inherit;font-size:14px}.tab.on{color:var(--text);border-color:var(--acc);background:var(--card)}.tab .x{margin-left:6px;color:var(--dim)}
 #cpMic.on,#micBtn.on{background:var(--bad)!important;color:#fff!important;border-color:var(--bad)!important;animation:pulse 1.4s infinite}
 @keyframes pulse{50%{opacity:.65}}.st-waiting-answer,.st-reviewing{color:var(--warn)}
 
@@ -28,6 +29,8 @@ h3{margin:18px 0 6px}.mode{margin:4px 0 4px 10px}
 </style></head><body>
 <header><b>Brenebase</b><span class="dim" id="lights"><span id="adot" class="dot"></span> PC <span id="mdot" class="dot"></span> Model <span id="wdot" class="dot"></span> Worker</span>
 <nav><button data-tab="send" class="on">Send</button><button data-tab="jobs">Jobs</button><button data-tab="companion" id="cpTab">Companion</button><button data-tab="projects">Projects</button><button data-tab="pc">PC</button><button data-tab="tools">Tools</button></nav></header>
+<div id="tabbar" style="display:flex;gap:6px;overflow-x:auto;padding:8px 14px;border-bottom:1px solid var(--line)"></div>
+<div id="tabNew" class="card" style="display:none;max-width:720px;margin:8px auto"><div class="row" style="margin:0"><input id="tnName" placeholder="Tab name" style="flex:1;min-width:120px;padding:8px;border-radius:8px;border:1px solid var(--line);background:#0f1116;color:var(--text)"><select id="tnProj"></select><button class="go" id="tnAdd">Add tab</button><button class="sm" id="tnX">Cancel</button></div><div class="dim">Pick a project to tie everything in this tab to it, or leave it blank for a plain conversation.</div></div>
 <main>
 <div id="login" class="card"><p>Password</p><div class="row"><input id="pw" type="password" style="flex:1;padding:9px;border-radius:8px;border:1px solid var(--line);background:#0f1116;color:var(--text)"><button class="go" id="loginBtn">Go</button></div><div id="loginMsg" class="st-failed"></div></div>
 
@@ -83,8 +86,9 @@ h3{margin:18px 0 6px}.mode{margin:4px 0 4px 10px}
       <div id="cpStage" style="width:42%;max-width:220px;aspect-ratio:1;border-radius:16px;overflow:hidden;flex:none"></div>
       <div style="flex:1"><b id="cpWho"></b><div class="dim" id="cpStatus"></div>
         <div class="row" id="cpModes" style="margin:6px 0"></div>
-        <div class="row"><button class="sm" id="cpEdit">Edit look</button><button class="sm" id="cpClear">New conversation</button></div></div>
+        <div class="row"><button class="sm" id="cpEdit">Edit look</button><button class="sm" id="cpClear">Clear this one</button></div></div>
     </div>
+    <div id="cpConvos" style="display:flex;gap:6px;overflow-x:auto;margin:10px 0 0"></div>
     <div id="cpLog" style="max-height:46vh;overflow:auto;margin:10px 0"></div>
     <textarea id="cpIn" placeholder="Say it." style="min-height:70px"></textarea>
     <div class="row"><button class="go" id="cpMic" style="background:var(--card);color:var(--text);border:1px solid var(--line)">&#127908; Talk</button><button class="go" id="cpSend">Send</button></div>
@@ -107,7 +111,7 @@ const md = t => { const e = String(t || '').replace(/[&<>"]/g, c => ({ '&': '&am
   }).join('')).join(''); };
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-document.querySelectorAll('nav button').forEach(b => b.onclick = () => { document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b)); for (const s of ['send', 'jobs', 'companion', 'projects', 'pc', 'tools']) $(s).style.display = s === b.dataset.tab ? '' : 'none'; if (b.dataset.tab === 'jobs') jobs(); if (b.dataset.tab === 'projects') projects(); if (b.dataset.tab === 'pc') pc(); if (b.dataset.tab === 'companion') companion(); });
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => { document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b)); for (const s of ['send', 'jobs', 'companion', 'projects', 'pc', 'tools']) $(s).style.display = s === b.dataset.tab ? '' : 'none'; if (b.dataset.tab === 'jobs') jobs(); if (b.dataset.tab === 'projects') projects(); if (b.dataset.tab === 'pc') pc(); if (b.dataset.tab === 'companion') companion(); tabs(); });
 $('loginBtn').onclick = async () => {
   const r = await fetch('/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: $('pw').value }) }).catch(() => null);
   if (!r) { $('loginMsg').textContent = 'Brenebase did not answer. Check your connection.'; return; }
@@ -136,19 +140,19 @@ $('routeBtn').onclick = async () => {
     $('tool').value = routed.pick ? routed.pick.tool : 'planner'; fillModes(routed.pick && routed.pick.mode);
     $('area').value = routed.area || 'hobby';
     $('q').textContent = routed.question || '';
-    $('proj').value = routed.project ? routed.project.id : '';
+    $('proj').value = routed.project && (routed.project.byTag || !tabNow() || !tabNow().project) ? routed.project.id : (tabNow() && tabNow().project) || (routed.project ? routed.project.id : '');
     const tg = routed.tags || {}, v = routed.vet || { parts: [] };
     const tagLine = tg.found && tg.found.length ? `<div class="row" style="margin:6px 0">${tg.found.map(t => `<span class="tag">${esc(t)}</span>`).join('')}<span class="dim">${routed.project ? esc(routed.project.name) : ''}${tg.focus ? ', ' + esc(tg.focus) : ''}${tg.projects && tg.projects.length > 1 ? ' (tags name more than one project; the first is used)' : ''}</span></div>` : '';
     const needs = routed.project && routed.project.needsInfo ? `<p class="st-waiting">${esc(routed.project.name)} has no details yet. Tell Brenebase about it on the Projects tab so agents get context.</p>` : '';
     $('vetBox').innerHTML = tagLine + needs + (v.suggest === 'parts' ? `<div class="card" style="border-color:var(--acc)"><b>This has ${v.parts.length} parts.</b> Each goes to its own tool and through its own checks.${v.parts.map(p => `<div class="mode"><span class="tag">${esc(p.label)}</span> ${esc(p.text)}</div>`).join('')}<div class="row"><button class="go" id="partsBtn">Send as parts</button><span class="dim">or Send below to keep it as one job</span></div></div>` : v.suggest === 'split' ? `<div class="card" style="border-color:#b48cff"><b>This is a build with art or story in it.</b> Use <b>Split it</b> so Claude only gets the code part and the rest is merged later.</div>` : '');
-    if ($('partsBtn')) $('partsBtn').onclick = async () => { const j = await api('/api/jobs/parts', { text: $('thought').value, parts: v.parts, project: $('proj').value, area: $('area').value, autonomy: $('autonomy').value, repo: tg.repo }); $('last').innerHTML = jobCard(j); $('pick').style.display = 'none'; $('thought').value = ''; jobs(); };
+    if ($('partsBtn')) $('partsBtn').onclick = async () => { const j = await api('/api/jobs/parts', { text: $('thought').value, parts: v.parts, project: $('proj').value, area: $('area').value, autonomy: $('autonomy').value, repo: tg.repo, thread: TAB || undefined }); $('last').innerHTML = jobCard(j); $('pick').style.display = 'none'; $('thought').value = ''; jobs(); };
     $('hints').innerHTML = routed.hints && routed.hints.length ? `<div class="dim" style="margin-top:6px">Already known in ${esc(routed.project.name)}:</div>` + routed.hints.map(h => `<div class="mode"><span class="tag">${esc(h.kind)}</span> ${esc(h.text)}</div>`).join('') : '';
   } finally { $('routeBtn').disabled = false; }
 };
 $('sendBtn').onclick = async () => {
   const args = {}; let repo;
   document.querySelectorAll('#extra input').forEach(i => { const k = i.id.slice(2); if (!i.value) return; if (k === 'repo') repo = i.value; else args[k] = i.value; });
-  const j = await api('/api/jobs', { text: $('thought').value, tool: $('tool').value, mode: $('mode').value, area: $('area').value, autonomy: $('autonomy').value, args, repo: repo || (routed && routed.tags && routed.tags.repo), project: $('proj').value, target: routed && routed.target });
+  const j = await api('/api/jobs', { text: $('thought').value, tool: $('tool').value, mode: $('mode').value, area: $('area').value, autonomy: $('autonomy').value, args, repo: repo || (routed && routed.tags && routed.tags.repo), project: $('proj').value, thread: TAB || undefined, target: routed && routed.target });
   $('last').innerHTML = jobCard(j); $('pick').style.display = 'none'; $('thought').value = '';
 };
 
@@ -219,6 +223,8 @@ async function cpChatView() {
 }
 function cpRender() {
   const h = CP.history || [];
+  $('cpConvos').innerHTML = (CP.convos || []).map(c => `<button class="tab${c.id === CP.current ? ' on' : ''}" data-c="${c.id}">${esc(c.name)}${c.id === CP.current && CP.convos.length > 1 ? '<span class="x" data-x="1">&times;</span>' : ''}</button>`).join('') + `<button class="tab" data-new="1" title="New conversation">+</button>`;
+  $('cpConvos').querySelectorAll('.tab').forEach(b => b.onclick = async e => { if (b.dataset.new) { const n = prompt('Name this conversation'); if (n == null) return; CP = await api('/api/companion/convo', { name: n || 'New' }); } else if (e.target.dataset.x) { if (!confirm('Close this conversation?')) return; CP = await api('/api/companion/convo', { id: CP.current, close: true }); } else CP = await api('/api/companion/convo', { id: b.dataset.c }); CP = await api('/api/companion'); cpSeen = (CP.history || []).length; cpRender(); });
   $('cpLog').innerHTML = h.map(m => m.who === 'me' ? `<div style="text-align:right;margin:6px 0"><span style="display:inline-block;background:#24324a;border-radius:12px;padding:8px 11px;max-width:85%;text-align:left;white-space:pre-wrap">${esc(m.text)}</span></div>` : m.who === 'note' ? `<div class="dim" style="margin:6px 0">${esc(m.text)}</div>` : `<div style="margin:6px 0"><span style="display:inline-block;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 11px;max-width:85%;white-space:pre-wrap">${esc(m.text)}</span></div>`).join('') || `<p class="dim">Say anything. It stays on your PC model.</p>`;
   $('cpLog').scrollTop = 1e9;
   $('cpStatus').textContent = CP.waiting ? `${CP.setup.name} is thinking...` : CP.pc ? '' : 'PC worker offline: sending will try to start it.';
@@ -233,7 +239,7 @@ async function companion() {
 $('cpSave').onclick = async () => { await api('/api/companion/setup', { name: $('cpName').value || 'Companion', about: $('cpAbout').value, voice: $('cpVoice').value, speak: $('cpSpeak').checked, look: cpLook() }); CP = await api('/api/companion'); cpChatView(); };
 $('cpCancel').onclick = () => cpChatView();
 $('cpEdit').onclick = () => cpSetupView(true);
-$('cpClear').onclick = async () => { if (!confirm('Start a new conversation? The old one is cleared.')) return; await api('/api/companion/clear', {}); companion(); };
+$('cpClear').onclick = async () => { if (!confirm('Clear this conversation? Its messages are deleted.')) return; await api('/api/companion/clear', {}); companion(); };
 $('cpMic').onclick = () => { if (listening && micTarget === 'cpIn') { micOff(); $('cpMic').classList.remove('on'); return; } if (listening) micOff(); micTarget = 'cpIn'; micOn(); $('cpMic').classList.add('on'); };
 /* talking mouth: follow the loudness of the voice clip */
 function cpPlay(url) {
@@ -260,6 +266,22 @@ $('cpSend').onclick = async () => {
 };
 $('cpIn').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !('ontouchstart' in window)) { e.preventDefault(); $('cpSend').onclick(); } };
 
+/* ---- tabs: a project or a named conversation; jobs sent here belong to it and follow-ups remember it ---- */
+let THREADS = [], TAB = localStorage.getItem('bbTab') || '';
+const tabNow = () => THREADS.find(t => t.id === TAB) || null;
+async function tabs() {
+  THREADS = (await api('/api/threads')).threads; if (TAB && !tabNow()) TAB = '';
+  const show = ['send', 'jobs'].some(id => $(id).style.display !== 'none');
+  $('tabbar').style.display = show ? 'flex' : 'none';
+  $('tabbar').innerHTML = `<button class="tab${TAB ? '' : ' on'}" data-t="">All</button>` + THREADS.map(t => `<button class="tab${t.id === TAB ? ' on' : ''}" data-t="${t.id}">${esc(t.name)}${t.id === TAB ? '<span class="x" data-x="1" title="Close tab">&times;</span>' : ''}</button>`).join('') + `<button class="tab" id="tabPlus" title="New tab">+</button>`;
+  $('tabbar').querySelectorAll('.tab[data-t]').forEach(b => b.onclick = async e => { if (e.target.dataset.x) { if (!confirm('Close this tab? Its jobs stay under All.')) return; await api('/api/threads', { id: TAB, closed: true }); TAB = ''; } else TAB = b.dataset.t; localStorage.setItem('bbTab', TAB); await tabs(); if ($('jobs').style.display !== 'none') jobs(); tabApply(); });
+  $('tabPlus').onclick = () => { $('tabNew').style.display = ''; $('tnName').value = ''; $('tnProj').innerHTML = '<option value="">No project</option>' + PJS_ALL.map(c => `<option value="${c.id}">${esc(c.name.split(' (')[0])}</option>`).join(''); $('tnName').focus(); };
+}
+let PJS_ALL = [];
+function tabApply() { const t = tabNow(); $('thought').placeholder = t ? `In ${t.name}: what next?` : 'Dump the thought here. The hub picks where it goes.'; if (t && t.project && $('proj')) $('proj').value = t.project; }
+$('tnAdd').onclick = async () => { const proj = $('tnProj').value, name = $('tnName').value.trim() || (proj ? $('tnProj').selectedOptions[0].textContent : 'Conversation'); const t = await api('/api/threads', { name, project: proj }); TAB = t.id; localStorage.setItem('bbTab', TAB); $('tabNew').style.display = 'none'; await tabs(); tabApply(); };
+$('tnX').onclick = () => $('tabNew').style.display = 'none';
+
 /* ---- split ---- */
 let SP = null;
 const lines = id => $(id).value.split('\n').map(x => x.trim()).filter(Boolean);
@@ -279,7 +301,7 @@ $('sp_add').onclick = () => spRefresh($('sp_addType').value);
 let spT = 0; for (const id of ['sp_mech', 'sp_art', 'sp_story']) $(id).oninput = () => { clearTimeout(spT); spT = setTimeout(() => spRefresh(), 600); };
 $('sp_send').onclick = async () => {
   SP.mechanics = lines('sp_mech'); SP.art = lines('sp_art'); SP.story = lines('sp_story');
-  const j = await api('/api/split/run', { text: $('thought').value, plan: SP, repo: $('sp_repo').value });
+  const j = await api('/api/split/run', { text: $('thought').value, plan: SP, repo: $('sp_repo').value, thread: TAB || undefined });
   if (j.error) return alert(j.error);
   $('splitBox').style.display = 'none'; $('thought').value = ''; $('last').innerHTML = jobCard(j);
 };
@@ -330,13 +352,13 @@ window.speak = async (id, b) => { b.disabled = true; b.textContent = 'Voice on t
 window.restyle = async (id, style) => { const k = await api(`/api/jobs/${id}/restyle`, { style }); $('last').innerHTML = jobCard(k); jobs(); };
 window.pasteBack = async id => { const v = $('ra_' + id).value.trim(); if (!v) return; await api(`/api/jobs/${id}/answer`, { text: v }); jobs(); };
 window.act = async (id, what) => { const j = await api(`/api/jobs/${id}/${what}`, {}); jobs(); if ($('last').innerHTML.includes(id)) $('last').innerHTML = jobCard(j); };
-async function jobs() { const d = await api('/api/jobs'); $('jobList').innerHTML = d.jobs.map(jobCard).join('') || '<p class="dim">No jobs yet.</p>'; }
+async function jobs() { const d = await api('/api/jobs' + (TAB ? `?thread=${TAB}` : '')); $('jobList').innerHTML = d.jobs.map(jobCard).join('') || '<p class="dim">No jobs yet.</p>'; }
 
 async function boot() {
   CAT = await api('/api/catalogue');
   pc(true).catch(() => {});
   $('tool').innerHTML = CAT.tools.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
-  const PJS = (await api('/api/projects')).projects.filter(c => !c.archived); $('proj').innerHTML = '<option value="">No project</option>' + PJS.map(c => `<option value="${c.id}">${esc(c.name.split(' (')[0])}</option>`).join('');
+  const PJS = (await api('/api/projects')).projects.filter(c => !c.archived); PJS_ALL = PJS; await tabs(); tabApply(); $('proj').innerHTML = '<option value="">No project</option>' + PJS.map(c => `<option value="${c.id}">${esc(c.name.split(' (')[0])}</option>`).join('');
   $('area').innerHTML = Object.entries(CAT.areas).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('');
   $('autonomy').innerHTML = Object.entries(CAT.autonomy).map(([k, v]) => `<option value="${k}"${k === 'draft' ? ' selected' : ''}>${k}</option>`).join('');
   const ad = () => $('autoDoes').textContent = CAT.autonomy[$('autonomy').value]; $('autonomy').onchange = ad; ad();

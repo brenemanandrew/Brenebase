@@ -33,6 +33,7 @@ import * as U from './updates.mjs';
 import * as TG from './tags.mjs';
 import { vet } from './vet.mjs';
 import * as CP from './companion.mjs';
+import * as TH from './threads.mjs';
 
 const PORT = +process.env.PORT || 8080;
 const PASS = (process.env.HUB_PASSWORD || '').trim();
@@ -93,14 +94,15 @@ export function speakable(text, cap = 1500) {
   const cut = keep.slice(0, cap); const end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '));
   return end > cap * 0.5 ? cut.slice(0, end + 1) : cut;
 }
-function makeJob({ text, tool, mode, area, autonomy = 'draft', args = {}, repo, target, project }) {
+function makeJob({ text, tool, mode, area, autonomy = 'draft', args = {}, repo, target, project, thread }) {
+  const th = thread && TH.get(thread); if (th && th.project && project === undefined) project = th.project;
   if (tool === 'image' && mode === 'model' && !args.specs) args = { ...args, specs: wizraSpecs(text) };
   let r = resolve(tool, mode); if (!r) throw new Error('unknown tool');
   if (process.env.HUB_WORK_LOCAL === '1' && area === 'work' && r.backend === 'claude') r = { ...r, backend: 'pc-model', runsOn: 'pc' };
   const pj = project === '' ? null : PJ.card(project) || PJ.match(text);
   /* a private (work) project's context never goes to the cloud: those jobs move to the PC model */
   if (pj && pj.private && r.backend === 'claude') r = { ...r, backend: 'pc-model', runsOn: 'pc' };
-  const job = { text, area: area || (pj && pj.area), autonomy, args, repo: repo || (pj && pj.repo && pj.repo.includes('/') && !pj.repo.includes(' ') ? pj.repo : undefined), target, project: pj ? pj.id : null, ...r };
+  const job = { text, area: area || (pj && pj.area), autonomy, args, repo: repo || (pj && pj.repo && pj.repo.includes('/') && !pj.repo.includes(' ') ? pj.repo : undefined), target, project: pj ? pj.id : null, thread: th ? th.id : undefined, ...r };
   const safe = ['brief', 'claude', 'link', 'copilot'].includes(r.backend) || (r.backend === 'pc-model') || (tool === 'image' && r.mode === 'model');
   const mustAsk = r.gate === 'always' || SPENDS.includes(r.backend) || autonomy === 'ask' || (autonomy === 'draft' && !safe);
   return L.add({ ...job, status: mustAsk ? 'waiting' : 'ready' });
@@ -110,12 +112,12 @@ async function start(j) {
   try {
     if (j.backend === 'brief') { const b = brief(j, PJ.context(j.project && PJ.card(j.project), 'code', j.text)); return L.update(j.id, { status: 'done', result: { text: b.prompt }, held: b.held }, b.secrets ? `${b.secrets} secret(s) removed` : 'brief written'); }
     if (j.backend === 'link') { const f = LINKS[`${j.tool}:${j.mode}`]; return L.update(j.id, { status: 'done', result: { link: f ? f(j.target) : null, text: j.does } }, 'link ready'); }
-    if (j.backend === 'claude') { L.update(j.id, { status: 'running' }); const r = await runClaude(j, claude, PJ.context(j.project && PJ.card(j.project), 'cloud', j.text)); return L.update(j.id, { status: 'done', result: { text: rejoin(r.text, r.held) } }, 'answered by Claude'); }
+    if (j.backend === 'claude') { L.update(j.id, { status: 'running' }); const r = await runClaude(j, claude, PJ.context(j.project && PJ.card(j.project), 'cloud', j.text), j.thread ? TH.history(L.list(200).filter(x => x.id !== j.id), j.thread) : []); return L.update(j.id, { status: 'done', result: { text: rejoin(r.text, r.held) } }, 'answered by Claude'); }
     if (j.backend === 'copilot') { const r = await runCopilot(j, j.project && PJ.card(j.project)); return r.relay ? L.update(j.id, { status: 'waiting-answer', result: { text: r.prompt, link: r.link, relay: true } }, 'Ready: copy it into Copilot, paste the answer back') : copilotAnswer(j, r.text, r.via); }
     if (j.backend === 'meshy') { L.update(j.id, { status: 'running' }); const r = await runMeshy(j); return L.update(j.id, { status: 'running', result: r }, `Meshy task ${r.task} started`); }
     if (PC_BACKENDS.includes(j.backend)) {
       const pj = j.project && PJ.card(j.project);
-      const extra = j.backend === 'claude-code' ? { prompt: brief(j, PJ.context(pj, 'code', j.text)).prompt, held: brief(j).held } : j.backend === 'pc-model' ? { system: systemFor(j.tool, j.mode) + (pj ? '\n\n' + PJ.context(pj, 'local', j.text) : '') } : {};
+      const extra = j.backend === 'claude-code' ? { prompt: brief(j, PJ.context(pj, 'code', j.text)).prompt, held: brief(j).held } : j.backend === 'pc-model' ? { system: systemFor(j.tool, j.mode) + (pj ? '\n\n' + PJ.context(pj, 'local', j.text) : ''), ...(j.thread && !j.messages ? { messages: [...TH.history(L.list(200).filter(x => x.id !== j.id), j.thread), { role: 'user', content: j.text }] } : {}) } : {};
       const q = L.update(j.id, { status: 'queued', ...extra }, workerOnline() ? 'sent to the PC' : 'waiting for the PC worker; asking the PC agent to start what is needed');
       if (!workerOnline()) PA.jumpstart(['worker', ...(j.backend === 'pc-model' ? ['model'] : [])]).then(n => n.length && L.update(j.id, {}, `Jumpstart: ${n.join('; ')}`)).catch(() => {});
       return q;
@@ -144,8 +146,8 @@ setInterval(() => syncUpdates().catch(() => {}), (+process.env.HUB_UPDATES_MINUT
 setInterval(() => syncProjects().catch(() => {}), (+process.env.HUB_SYNC_MINUTES || 60) * 60000);
 
 /* ---- split jobs: a parent with parts, put back together by a merge job on the PC ---- */
-function startSplit({ text, plan, repo, label }) {
-  const parent = L.add({ tool: 'split', mode: 'split', backend: 'split', runsOn: 'cloud', label: `Split: ${label || text.slice(0, 50)}`, text, repo, plan, stage: 'parts', status: 'running', slots: plan.slots.map(x => ({ ...x, fill: null })), children: [] });
+function startSplit({ text, plan, repo, label, thread }) {
+  const parent = L.add({ tool: 'split', mode: 'split', backend: 'split', runsOn: 'cloud', label: `Split: ${label || text.slice(0, 50)}`, text, repo, plan, thread, stage: 'parts', status: 'running', slots: plan.slots.map(x => ({ ...x, fill: null })), children: [] });
   const kids = [];
   const pj = PJ.match(text); const brief = P.codeBrief(plan, { id: parent.id, repo }) + (pj ? '\n\n' + PJ.context(pj, 'code', plan.mechanics.join('. ')) : '');
   kids.push(L.add({ parent: parent.id, part: 'code', tool: 'coder', mode: 'build', backend: 'claude-code', runsOn: 'pc', label: 'Code part (Claude Code)', text: brief, prompt: brief, held: [], repo, status: 'queued' }));
@@ -219,7 +221,7 @@ http.createServer(async (req, res) => {
       worker.seen = Date.now();
       if (p === '/api/worker/next') { worker.can = (u.searchParams.get('can') || '').split(',').filter(Boolean); return send(res, 200, { job: L.next(worker.can) }); }
       if (p === '/api/worker/done' && req.method === 'POST') { const b = await body(req); const j = L.get(b.id); if (!j) return send(res, 404, {}); if (j.backend === 'readdir') { const n = b.ok ? U.fromPcFiles(b.result && b.result.files, j.dir) : 0; return send(res, 200, L.update(j.id, { status: b.ok ? 'done' : 'failed', error: b.error, result: { text: `${n} new update(s)` } }, 'update folder read')); }
-      if (j.backend === 'read') { const added = PJ.recordPc(j.project, j.source, b.ok, b.text || '', b.error); return send(res, 200, L.update(j.id, { status: b.ok ? 'done' : 'failed', error: b.error, result: { text: b.ok ? `${added.length} new note(s)` : '' } }, 'notes read')); } const text = b.text != null ? rejoin(b.text, j.held || []) : undefined; if (j.companion && b.ok) CP.add('them', b.text || '', { job: j.id }); else if (j.companion) CP.add('note', `No reply: ${b.error || 'the PC model did not answer'}`);
+      if (j.backend === 'read') { const added = PJ.recordPc(j.project, j.source, b.ok, b.text || '', b.error); return send(res, 200, L.update(j.id, { status: b.ok ? 'done' : 'failed', error: b.error, result: { text: b.ok ? `${added.length} new note(s)` : '' } }, 'notes read')); } const text = b.text != null ? rejoin(b.text, j.held || []) : undefined; if (j.companion && b.ok) CP.add('them', b.text || '', { job: j.id, convo: j.convo }); else if (j.companion) CP.add('note', `No reply: ${b.error || 'the PC model did not answer'}`, { convo: j.convo });
         if (b.result && b.result.audio64) { fs.mkdirSync(IMG_DIR, { recursive: true }); const f = `${j.id}.wav`; fs.writeFileSync(path.join(IMG_DIR, f), Buffer.from(b.result.audio64, 'base64')); b.result.audio = `/api/img/${f}`; delete b.result.audio64; if (j.of) { const src = L.get(j.of); if (src) L.update(src.id, { result: { ...src.result, audio: b.result.audio } }, 'read aloud ready'); } }
         if (b.result && b.result.images64) { fs.mkdirSync(IMG_DIR, { recursive: true }); b.result.images = b.result.images64.map(im => { const f = `${j.id}-${im.name.replace(/[^\w.-]/g, '')}`; fs.writeFileSync(path.join(IMG_DIR, f), Buffer.from(im.data, 'base64')); return `/api/img/${f}`; }); delete b.result.images64; b.result.restyle = j.tool === 'image' && j.mode === 'model'; }
         const fin = afterChange(L.update(b.id, { status: b.ok ? 'done' : 'failed', result: { ...b.result, text }, error: b.error }, b.ok ? 'back from the PC' : 'PC reported a failure'));
@@ -249,15 +251,18 @@ http.createServer(async (req, res) => {
       const f = path.join(IMG_DIR, path.basename(img)); const data = `data:${f.endsWith('.png') ? 'image/png' : 'image/webp'};base64,${fs.readFileSync(f).toString('base64')}`;
       return send(res, 200, makeJob({ text: `${b.style || 'Realistic, detailed, natural lighting'}. Keep the same character, outfit, pose and framing. ${j.text}`, tool: 'image', mode: 'edit', area: j.area, autonomy: 'draft', args: { image_url: data }, project: j.project }));
     }
+    if (p === '/api/threads' && req.method === 'GET') return send(res, 200, { threads: TH.list() });
+    if (p === '/api/threads' && req.method === 'POST') { const b = await body(req); return send(res, 200, b.id ? TH.update(b.id, b) : TH.open(b)); }
     if (p === '/api/companion' && req.method === 'GET') return send(res, 200, { ...CP.state(), waiting: L.list(80).some(j => j.companion && ['queued', 'running'].includes(j.status)), pc: workerOnline() });
     if (p === '/api/companion/setup' && req.method === 'POST') { const b = await body(req); return send(res, 200, { setup: CP.setup(b) }); }
+    if (p === '/api/companion/convo' && req.method === 'POST') { const b = await body(req); return send(res, 200, CP.convo(b)); }
     if (p === '/api/companion/clear' && req.method === 'POST') { CP.clear(); return send(res, 200, { ok: true }); }
     if (p === '/api/companion/say' && req.method === 'POST') {
       /* one turn: his line goes into the history, the PC model gets the recent conversation; no filters, PC only */
       const b = await body(req); const text = String(b.text || '').trim(); if (!text) return send(res, 400, { error: 'say something' });
-      const mode = CP.MODES.includes(b.mode) ? b.mode : 'chat'; CP.add('me', text, { mode });
+      const mode = CP.MODES.includes(b.mode) ? b.mode : 'chat'; const convo = CP.state().current; CP.add('me', text, { mode, convo });
       const rq = CP.request(mode);
-      const j = L.add({ tool: 'companion', mode, backend: 'pc-model', runsOn: 'pc', label: `Companion: ${mode}`, text, system: rq.system, messages: rq.messages, maxTokens: 600, companion: true, status: 'queued', quiet: true });
+      const j = L.add({ tool: 'companion', mode, backend: 'pc-model', runsOn: 'pc', label: `Companion: ${mode}`, text, system: rq.system, messages: rq.messages, maxTokens: 600, companion: true, convo, status: 'queued', quiet: true });
       if (!workerOnline()) PA.jumpstart(['worker', 'model']).catch(() => {});
       return send(res, 200, { ok: true, id: j.id });
     }
@@ -278,7 +283,7 @@ http.createServer(async (req, res) => {
       /* one job per part; every part goes through makeJob's checks on its own */
       const b = await body(req); const parent = L.add({ tool: 'parts', mode: 'parts', backend: 'parts', runsOn: 'cloud', label: `Parts: ${String(b.text || '').slice(0, 50)}`, text: b.text, project: b.project || null, status: 'running', children: [] });
       const kids = [];
-      for (const pt of b.parts || []) { let j = makeJob({ text: pt.text, tool: pt.tool, mode: pt.mode, area: b.area, autonomy: b.autonomy, project: b.project, repo: b.repo }); L.update(j.id, { parent: parent.id }); if (j.status === 'ready') j = await start(j); kids.push(j.id); }
+      for (const pt of b.parts || []) { let j = makeJob({ text: pt.text, tool: pt.tool, mode: pt.mode, area: b.area, autonomy: b.autonomy, project: b.project, repo: b.repo, thread: b.thread }); L.update(j.id, { parent: parent.id }); if (j.status === 'ready') j = await start(j); kids.push(j.id); }
       return send(res, 200, L.update(parent.id, { children: kids, status: 'done' }, `${kids.length} parts sent to their tools`));
     }
     if (p === '/api/tags' && req.method === 'GET') return send(res, 200, { tags: TG.tags() });
@@ -294,7 +299,7 @@ http.createServer(async (req, res) => {
     if (ph && req.method === 'POST') { const b = await body(req); const pj = PJ.card(ph[1]); if (!pj) return send(res, 404, {}); const text = `Help me solve this in ${pj.name}: ${b.item}`; const r = await route(text, { claude, rulesOnly: true }); const pick = r.pick && r.pick.tool !== 'companion' ? r.pick : { tool: 'expert', mode: pj.area === 'work' ? 'ops' : 'game' }; let j = makeJob({ text, tool: pick.tool, mode: pick.mode, area: pj.area, autonomy: 'draft', project: pj.id, repo: b.repo }); if (j.status === 'ready') j = await start(j); return send(res, 200, j); }
     if (p === '/api/split/plan' && req.method === 'POST') { const b = await body(req); const pl = b.plan || P.plan(b.text); if (b.add) P.addSlot(pl, b.add); return send(res, 200, { plan: pl, brief: P.codeBrief(pl, { id: 'NEW', repo: b.repo }), leaks: P.leaks(pl), types: Object.keys(P.SLOT_TYPES) }); }
     if (p === '/api/split/run' && req.method === 'POST') { const b = await body(req); if (!b.plan || !b.plan.mechanics.length) return send(res, 400, { error: 'nothing for the code part to build' }); return send(res, 200, startSplit(b)); }
-    if (p === '/api/jobs' && req.method === 'GET') return send(res, 200, { jobs: L.list(80).filter(j => !j.quiet || j.status === 'failed'), worker: { online: workerOnline(), can: worker.can } });
+    if (p === '/api/jobs' && req.method === 'GET') { const tf = u.searchParams.get('thread'); return send(res, 200, { jobs: L.list(200).filter(j => (!j.quiet || j.status === 'failed') && (!tf || j.thread === tf || (j.parent && (L.get(j.parent) || {}).thread === tf))).slice(0, 80), worker: { online: workerOnline(), can: worker.can } }); }
     if (p === '/api/jobs' && req.method === 'POST') { const b = await body(req); let j = makeJob(b); if (j.status === 'ready') j = await start(j); return send(res, 200, j); }
     const fm = p.match(/^\/api\/jobs\/([a-f0-9]+)\/fill$/);
     if (fm && req.method === 'POST') { const b = await body(req); const par = L.get(fm[1]); if (!par || !par.slots) return send(res, 404, {}); fillSlot(par, b.slot, b.value ? { source: b.source || 'url', value: b.value, from: 'you' } : null); L.update(par.id, {}, `${b.slot} ${b.value ? 'filled by you' : 'cleared'}`); return send(res, 200, afterChange({ parent: par.id })); }
