@@ -35,7 +35,7 @@ import fs from 'fs';
 const HOME = os.homedir();
 const HERE = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
 const HUB = (process.env.HUB_URL || 'https://brenebase.fly.dev').replace(/\/$/, '');
-const KEY = process.env.HUB_WORKER_TOKEN || '';
+const KEY = (process.env.HUB_WORKER_TOKEN || '').trim();
 const PORT = +process.env.AGENT_PORT || 8765;
 const LMS = process.env.LMS || path.join(HOME, '.lmstudio', 'bin', process.platform === 'win32' ? 'lms.exe' : 'lms');
 const MODEL = process.env.MODEL || 'mn-violet-lotus-12b';
@@ -127,13 +127,15 @@ http.createServer(async (req, res) => {
 
 /* ---- way 2: polling Brenebase ---- */
 const H = { authorization: `Bearer ${KEY}`, 'content-type': 'application/json' };
-let beat = 0;
+let beat = 0, refused = false;
 for (;;) {
   try {
     /* every poll carries a fresh status now and then, so the PC tab is right even without Tailscale */
     const st = beat++ % 6 === 0 ? await status() : null;
     const r = await fetch(`${HUB}/api/agent/next`, { method: 'POST', headers: H, body: JSON.stringify({ status: st }) });
-    if (r.status === 401) { console.log('PC key refused by Brenebase'); await new Promise(s => setTimeout(s, 60000)); continue; }
+    /* a wrong key: say so once, then check back every 5 minutes instead of repeating it */
+    if (r.status === 401) { if (!refused) console.log('PC key refused by Brenebase: the HUB_WORKER_TOKEN on this PC does not match the BRENEBASE_PC_KEY secret. Checking again every 5 minutes.'); refused = true; await new Promise(s => setTimeout(s, 300000)); continue; }
+    refused = false;
     const { cmd } = await r.json();
     if (cmd) { console.log(`doing ${cmd.action}`); const out = await act(cmd.action).catch(e => ({ ok: false, note: String(e.message || e) })); await fetch(`${HUB}/api/agent/done`, { method: 'POST', headers: H, body: JSON.stringify({ id: cmd.id, ...out }) }); }
     else await new Promise(s => setTimeout(s, 5000));

@@ -24,7 +24,7 @@ import fs from 'fs';
 import { checkFile, SLOT_TYPES } from '../parts.mjs';
 
 const HUB = (process.env.HUB_URL || 'http://localhost:8080').replace(/\/$/, '');
-const TOKEN = process.env.HUB_WORKER_TOKEN || '';
+const TOKEN = (process.env.HUB_WORKER_TOKEN || '').trim();
 const BIONIC = process.env.BIONIC_URL || 'http://127.0.0.1:1234';
 const BLENDER = process.env.BLENDER || 'blender';
 const REPOS = process.env.REPOS || path.join(os.homedir(), 'repos');
@@ -170,10 +170,12 @@ async function merge(j) {
 }
 
 const H = { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' };
+let refused = false;
 for (;;) {
   try {
     const r = await fetch(`${HUB}/api/worker/next?can=${can.join(',')}`, { headers: H });
-    if (r.status === 401) { console.log('Token refused: the PC and hub secrets do not match.'); await new Promise(s => setTimeout(s, 30000)); continue; }
+    if (r.status === 401) { if (!refused) console.log('PC key refused: HUB_WORKER_TOKEN on this PC does not match BRENEBASE_PC_KEY. Checking again every 5 minutes.'); refused = true; await new Promise(s => setTimeout(s, 300000)); continue; }
+    refused = false;
     const { job } = await r.json();
     if (job) {
       console.log(`job ${job.id}: ${job.label}`);

@@ -38,7 +38,7 @@ const PORT = +process.env.PORT || 8080;
 const PASS = process.env.HUB_PASSWORD || '';
 /* an unconfigured copy is closed, not open: on Fly it refuses to start without its password and PC key */
 if (process.env.FLY_APP_NAME && (!PASS || !process.env.HUB_WORKER_TOKEN)) { console.error('Refusing to start: set HUB_PASSWORD and HUB_WORKER_TOKEN as Fly secrets.'); process.exit(1); }
-const WTOKEN = process.env.HUB_WORKER_TOKEN || '';
+const WTOKEN = (process.env.HUB_WORKER_TOKEN || '').trim();
 const PUB = path.join(path.dirname(new URL(import.meta.url).pathname), 'public');
 let claude = null;
 if (process.env.ANTHROPIC_API_KEY) { const { default: Anthropic } = await import('@anthropic-ai/sdk'); claude = new Anthropic(); }
@@ -63,7 +63,7 @@ const workerOnline = () => Date.now() - worker.seen < 30000;
 
 const SESSION = crypto.createHash('sha256').update('hub:' + PASS).digest('hex').slice(0, 32);
 const authed = req => !PASS || (req.headers.cookie || '').includes(`hub=${SESSION}`);
-const isWorker = req => WTOKEN && req.headers.authorization === `Bearer ${WTOKEN}`;
+const isWorker = req => WTOKEN && String(req.headers.authorization || '').trim() === `Bearer ${WTOKEN}`;
 const send = (res, code, obj) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)); };
 const body = req => new Promise(ok => { let b = ''; req.on('data', c => { b += c; if (b.length > 2e6) req.destroy(); }); req.on('end', () => { try { ok(JSON.parse(b || '{}')); } catch { ok({}); } }); });
 
