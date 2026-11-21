@@ -14,6 +14,9 @@ title: One line saying what changed
 ## Not tested
 - What could not be checked
 
+## Fixed
+- Anything an earlier update listed as broken that now works (clears that note)
+
 ## Broken
 - Anything found broken or made worse (leave empty if none)
 

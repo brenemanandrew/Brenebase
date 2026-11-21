@@ -28,14 +28,14 @@ let db = { seen: {}, items: [] };
 try { db = JSON.parse(fs.readFileSync(FILE, 'utf8')); } catch { /* first run */ }
 const save = () => { fs.mkdirSync(path.dirname(FILE), { recursive: true }); fs.writeFileSync(FILE, JSON.stringify(db, null, 1)); };
 
-const SECTIONS = { done: /^done|^changed|^what (was )?(done|changed)/i, tested: /^tested|^verified/i, not_tested: /^not tested|^untested|^could not test/i, broken: /^broken|^known (issues|problems)|^bugs?/i, open: /^open|^next|^todo|^to do|^follow/i, settings: /^settings|^config/i };
+const SECTIONS = { fixed: /^fixed|^resolved|^no longer broken/i, done: /^done|^changed|^what (was )?(done|changed)/i, tested: /^tested|^verified/i, not_tested: /^not tested|^untested|^could not test/i, broken: /^broken|^known (issues|problems)|^bugs?/i, open: /^open|^next|^todo|^to do|^follow/i, settings: /^settings|^config/i };
 
 export function parse(text, meta = {}) {
   const t = String(text || '').replace(/\r/g, '');
   const fm = {}; const m = t.match(/^---\n([\s\S]*?)\n---\n?/);
   if (m) for (const line of m[1].split('\n')) { const kv = line.match(/^(\w+):\s*(.*)$/); if (kv) fm[kv[1].toLowerCase()] = kv[2].trim(); }
   const body = m ? t.slice(m[0].length) : t;
-  const out = { done: [], tested: [], not_tested: [], broken: [], open: [], settings: [] }; let cur = 'done';
+  const out = { fixed: [], done: [], tested: [], not_tested: [], broken: [], open: [], settings: [] }; let cur = 'done';
   for (const line of body.split('\n')) {
     const h = line.match(/^#{1,4}\s+(.*)/);
     if (h) { cur = Object.keys(SECTIONS).find(k => SECTIONS[k].test(h[1].trim())) || null; continue; }
@@ -52,8 +52,12 @@ export function add(text, meta) {
   if (db.seen[key]) return null;
   const u = { id: crypto.randomBytes(4).toString('hex'), at: Date.now(), ...parse(text, meta) };
   /* content-limit notes are left off (Andrew's standing rule, see projects.mjs CONTENT_LIMIT) */
-  for (const k of ['done', 'tested', 'not_tested', 'broken', 'open', 'settings']) u[k] = u[k].filter(t => !LIMIT.test(t));
-  if (!u.done.length && !u.broken.length && !u.open.length && !u.tested.length) return null;
+  for (const k of ['fixed', 'done', 'tested', 'not_tested', 'broken', 'open', 'settings']) u[k] = u[k].filter(t => !LIMIT.test(t));
+  /* "## Fixed" lines clear matching broken (and open) notes from earlier updates of the same project */
+  const words = t => new Set(String(t).toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(' ').filter(w => w.length > 3));
+  const same = (a, b) => { const A = words(a), B = words(b); const n = [...A].filter(w => B.has(w)).length; return n >= 2 && n / Math.min(A.size || 1, B.size || 1) >= 0.5; };
+  if (u.fixed.length) for (const old of db.items) if (!u.project || old.project === u.project) for (const k of ['broken', 'open']) old[k] = (old[k] || []).filter(t => !u.fixed.some(f => same(f, t)));
+  if (!u.done.length && !u.fixed.length && !u.broken.length && !u.open.length && !u.tested.length) return null;
   db.seen[key] = 1; db.items.unshift(u); db.items = db.items.slice(0, 500); save(); return u;
 }
 export const list = (project, n = 50) => db.items.filter(u => !project || u.project === project).slice(0, n);

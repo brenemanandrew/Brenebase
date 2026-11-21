@@ -71,6 +71,10 @@ SPLIT.push(
   ['voice skips code, links and paths', !/const|https|server\.mjs/.test(speakable('Run this:\n```js\nconst a = 1;\n```\nsee https://x.dev and C:\\a\\b\\server.mjs'))],
   ['code or JSON only: no voice job at all', speakable('```\ncode\n```') === '' && speakable('{"a": 1}') === ''],
 );
+const UPx = await import('./updates.mjs');
+UPx.add('---\nproject: brenebase\n---\n## Broken\n- The Claude key on Brenebase is rejected (401)', { key: 'fx1' });
+UPx.add('---\nproject: brenebase\n---\n## Fixed\n- Claude key on Brenebase works now', { key: 'fx2' });
+SPLIT.push(['## Fixed clears the matching broken note', !UPx.list('brenebase').some(u => u.broken.some(b => /Claude key/.test(b)))]);
 let sOk = 0; for (const [n, ok] of SPLIT) { if (ok) sOk++; console.log(`${ok ? 'ok  ' : 'MISS'} split: ${n}`); }
 pass += sOk; const total = CASES.length + SPLIT.length;
 console.log(`\n${pass}/${total} as expected`);

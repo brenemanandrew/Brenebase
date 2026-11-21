@@ -16,6 +16,6 @@ Andrew's main entry point outside the Claude app. Read README.md first: it expla
 ## Brenebase updates (required)
 After any change to this project, write `.brenebase/updates/<YYYY-MM-DD>-<short-name>.md` and commit it with the work, on the same branch. Brenebase reads these routinely to keep its project notes current.
 - Front matter: `project:` (breneland, brenai, work, brenerig, brenebase, sui or valinfor), `by:`, `date:`, `branch:`, `title:`.
-- Then bullets under `## Done`, `## Tested`, `## Not tested`, `## Broken`, `## Open`, `## Settings changed`.
+- Then bullets under `## Done`, `## Fixed`, `## Tested`, `## Not tested`, `## Broken`, `## Open`, `## Settings changed`. `## Fixed` clears matching broken notes from earlier updates.
 - Never put passwords, PINs, tokens or their values in it. Name a secret, never its value.
 - Template: `UPDATE-TEMPLATE.md`.
