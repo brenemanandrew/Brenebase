@@ -1,6 +1,6 @@
 ---
 name: threejs-artifact-game
-description: Build and ship a playable Three.js game as a Claude artifact (single HTML page plus optional data files), and test it headlessly. Use when asked for a browser game prototype, 3D scene or interactive toy delivered as an artifact link.
+description: Build and ship a playable Three.js game as a Claude artifact (single HTML page plus optional data files), and test it headlessly. Use when asked for a browser game prototype, 3D scene or interactive toy delivered as an artifact link. Not for the Breneland game repo, which has its own harness and rules (use the Breneland skills).
 ---
 
 # Three.js game as a Claude artifact

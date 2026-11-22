@@ -1,6 +1,6 @@
 ---
 name: kaykit-asset-pipeline
-description: Pull free CC0 low-poly fantasy models (KayKit by Kay Lousberg) and package them for a Three.js artifact: buildings, props, nature and animated characters. Use when a web game needs a consistent set of free 3D models.
+description: Pull free CC0 low-poly fantasy models (KayKit by Kay Lousberg) and package them for a Three.js artifact: buildings, props, nature and animated characters. Use when a web game needs a consistent set of free 3D models. Not for props in Breneland itself (use free-model-intake, which follows the game's toon and budget rules).
 ---
 
 # KayKit asset pipeline

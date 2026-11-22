@@ -1,6 +1,6 @@
 ---
 name: doll
-description: Make or edit a Brenebase cartoon doll (the companion or a saved doll) from a description: hair, clothes, colours, body shape, tap reactions; answers with a JSON look. Not for 3D models or game characters (use the Breneland character skills).
+description: Make or edit a Brenebase cartoon doll (the companion or a saved doll) from a description: her hair, hair colour, clothes, outfit, dress, top, skirt, shoes, colours, body shape, tap reactions; answers with a JSON look. Not for 3D models or game characters (use the Breneland character skills) or pictures from the picture models (use picture-prompts).
 ---
 
 # Skill: make and edit a Brenebase doll

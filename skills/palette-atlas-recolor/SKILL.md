@@ -1,6 +1,6 @@
 ---
 name: palette-atlas-recolor
-description: Make many texture variations of low-poly models that use a shared palette atlas, by repainting regions on a canvas at runtime. Covers character outfits (skin, hair, cloth), building roof and plaster looks, and tintable grey ground tiles. Use when models need variety without new art.
+description: Make many texture variations of low-poly models that use a shared palette atlas, by repainting regions on a canvas at runtime. Covers character outfits (skin, hair, cloth), building roof and plaster looks, and tintable grey ground tiles. Use when models need variety without new art. Not for the companion doll (use doll) or Breneland wearables (use fit-a-wearable).
 ---
 
 # Palette atlas recolor

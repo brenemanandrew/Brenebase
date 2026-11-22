@@ -64,17 +64,20 @@ export function all() {
 /* ---- the rules check (fallback and dry run) ---- */
 const STOP = new Set('a an and the of to in on for with is are be as at by or it its this that from into your you my me i we our not no use using used when what which who how any all each every do does can will should would could make made makes get set new one two only also more most than then them they their there here about after before over under just like via per has have had been was were if else so but'.split(' '));
 const stem = w => w.replace(/(ings?|ed|es|s)$/, '').replace(/(.)\1$/, '$1');
-const words = s => new Set(String(s || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter(w => w.length > 2 && !STOP.has(w)).map(stem));
+const words = s => new Set(String(s || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter(w => (w.length > 2 || /\d/.test(w)) && !STOP.has(w)).map(stem));
 export function ruleCheck(task, skills) {
   const tw = words(task);
-  return skills.map(s => {
-    const what = s.description.replace(/not for\s*:?[^.;]*/gi, ' ');
-    const sw = words(`${s.name.replace(/-/g, ' ')} ${what}`), nw = words(s.notFor.join(' '));
-    const hit = [...tw].filter(w => sw.has(w)), miss = [...tw].filter(w => nw.has(w));
-    const nameHit = s.name.split('-').filter(p => p.length > 2 && tw.has(stem(p))).length;
-    const score = hit.length + nameHit;
-    if (miss.length >= 2 && miss.length >= hit.length) return { name: s.name, used: false, reason: `the description says it is not for this (${miss.slice(0, 3).join(', ')})` };
-    if (score >= 3 || (score >= 2 && nameHit)) return { name: s.name, used: true, reason: `the task matches what it is for (${[...new Set(hit)].slice(0, 4).join(', ')})` };
+  /* rarer words count more: a word in most skills' descriptions ("game", "model") says little, one in a single skill says a lot */
+  const docs = skills.map(s => words(`${s.name.replace(/-/g, ' ')} ${s.description.replace(/not for\s*:?[^.;]*/gi, ' ')}`)), df = new Map();
+  for (const d of docs) for (const w of d) df.set(w, (df.get(w) || 0) + 1);
+  const idf = w => Math.log((skills.length + 1) / ((df.get(w) || 0) + 0.5));
+  return skills.map((s, i) => {
+    const sw = docs[i], nw = words(s.notFor.join(' '));
+    const hit = [...tw].filter(w => sw.has(w)), miss = [...tw].filter(w => nw.has(w) && !sw.has(w));
+    const nameHit = s.name.split('-').filter(p => (p.length > 2 || /\d/.test(p)) && tw.has(stem(p))).length;
+    const score = hit.reduce((n, w) => n + idf(w), 0) + nameHit * 1.5, against = miss.reduce((n, w) => n + idf(w), 0);
+    if (against > score && miss.length) return { name: s.name, used: false, reason: `the description says it is not for this (${miss.slice(0, 3).join(', ')})` };
+    if (score >= 3.8) return { name: s.name, used: true, reason: `the task matches what it is for (${[...new Set(hit)].slice(0, 4).join(', ')})` };
     return { name: s.name, used: false, reason: hit.length ? `only a loose match (${hit.slice(0, 3).join(', ')})` : 'nothing in the task matches what it is for' };
   });
 }

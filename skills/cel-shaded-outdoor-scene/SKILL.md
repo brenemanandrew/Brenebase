@@ -1,6 +1,6 @@
 ---
 name: cel-shaded-outdoor-scene
-description: Give a Three.js outdoor scene a vibrant cel-shaded look: toon ramps, cast shadows, wind-blown instanced grass that parts around the player, reflective toon water, wind on trees and flags, drifting motes, and rolling terrain that everything follows. Use for a "beauty pass" on a low-poly 3D scene.
+description: Give a Three.js outdoor scene a vibrant cel-shaded look: toon ramps, cast shadows, wind-blown instanced grass that parts around the player, reflective toon water, wind on trees and flags, drifting motes, and rolling terrain that everything follows. Use for a "beauty pass" on a low-poly 3D scene. Not for Breneland, which has its own toon pipeline (toon.js, GRADIENT_3); use set-piece-texturing or Breneland3 there.
 ---
 
 # Cel-shaded outdoor scene (three r128)
