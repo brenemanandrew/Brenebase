@@ -46,6 +46,7 @@ h3{margin:18px 0 6px}.mode{margin:4px 0 4px 10px}
   <div id="now"></div>
   <div class="pills" id="sendProj" style="flex-wrap:nowrap;overflow-x:auto;margin:0 0 8px"></div>
   <textarea id="thought" placeholder="Say or type what you want. Brenebase works out the parts and where each goes."></textarea>
+  <div id="sendPicPrev"></div>
   <div id="heard" class="dim" style="min-height:1.2em;font-style:italic"></div>
   <div class="bigrow"><button class="go" id="micBtn" title="Talk to text" style="background:var(--card);color:var(--text);border:1px solid var(--line)">&#127908; Talk</button><button class="go" id="goBtn">Go &#9656;</button></div>
   <div id="planBox"></div>
@@ -80,7 +81,7 @@ h3{margin:18px 0 6px}.mode{margin:4px 0 4px 10px}
 </section>
 <section id="images" style="display:none">
   <div class="card">
-    <textarea id="imPrompt" placeholder="What to make. A lighthouse at sunset, warm light, waves on the rocks." style="min-height:80px"></textarea>
+    <textarea id="imPrompt" placeholder="What to make. A lighthouse at sunset, warm light, waves on the rocks. Paste a picture here to start from it." style="min-height:80px"></textarea><div id="imPicPrev"></div><div class="row" id="imStrRow" style="display:none;margin:2px 0"><span class="dim">How much to change it</span><input type="range" id="imStr" min="0.2" max="0.95" step="0.05" value="0.6" style="flex:1"><span class="dim" id="imStrV">0.6</span></div>
     <h4 style="margin:10px 0 4px;color:var(--dim);font-size:14px">Model</h4><div class="pills" id="imModel"></div>
     <h4 style="margin:10px 0 4px;color:var(--dim);font-size:14px">Shape</h4><div class="pills" id="imSize"></div>
     <div class="row"><label class="dim">How many <select id="imCount"><option>1</option><option>2</option><option>3</option><option>4</option></select></label><label class="dim">Steps <input id="imSteps" type="number" min="1" max="80" style="width:64px;padding:6px;border-radius:8px;border:1px solid var(--line);background:#0f1116;color:var(--text)"></label></div>
@@ -168,6 +169,15 @@ function showDoes() {
 $('tool').onchange = () => fillModes(); $('mode').onchange = showDoes;
 
 let routed = null;
+/* ---- paste or drop a picture into a box: shrunk on the phone (long side 1280) and shown under it with Remove ---- */
+function picFrom(f, done) { if (!f || !/^image\//.test(f.type)) return false; const img = new Image(); img.onload = () => { const k = Math.min(1, 1280 / Math.max(img.width, img.height)); const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(img.src); done(c.toDataURL('image/jpeg', 0.88)); }; img.src = URL.createObjectURL(f); return true; }
+function pasteTo(boxId, prevId, set, note) {
+  const show = d => { set(d); $(prevId).innerHTML = d ? `<div class="row" style="margin:4px 0"><img src="${d}" style="height:64px;border-radius:8px"><button class="sm" data-rm="1">Remove</button><span class="dim" style="font-size:13px">${note}</span></div>` : ''; const r = $(prevId).querySelector('[data-rm]'); if (r) r.onclick = () => show(null); };
+  $(boxId).addEventListener('paste', e => { const it = [...((e.clipboardData || {}).items || [])].find(x => x.kind === 'file' && /^image\//.test(x.type)); if (it && picFrom(it.getAsFile(), show)) e.preventDefault(); });
+  $(boxId).addEventListener('drop', e => { const f = [...((e.dataTransfer || {}).files || [])].find(x => /^image\//.test(x.type)); if (f) { e.preventDefault(); picFrom(f, show); } });
+  return show;
+}
+var SENDPIC = null, IMPIC = null;
 /* ---- Images: the picture models on the PC, run by Brenebase ---- */
 const IM_MODELS = [['realistic', 'Realistic (Z-Image Turbo)', 8], ['anime', 'Anime (Illustrious XL)', 28], ['manga', 'Manga (Illustrious + LoRA)', 28]];
 const IM_SIZES = [['1:1', 'Square', 1024, 1024], ['2:3', 'Portrait', 832, 1216], ['3:2', 'Landscape', 1216, 832], ['9:16', 'Phone', 768, 1344], ['16:9', 'Wide', 1344, 768]];
@@ -184,10 +194,12 @@ async function imTab() {
   const d = await api('/api/jobs'); const js = (d.jobs || []).filter(j => j.tool === 'image' && ['realistic', 'anime', 'manga', 'h3', 'model'].includes(j.mode)).slice(0, 30);
   $('imList').innerHTML = js.map(j => { const r = j.result || {}; return `<div class="card"><div class="row" style="margin:0"><span class="st-${j.status}">${j.status}</span><span class="dim" style="flex:1">${esc(j.label.replace(/^Images: /, ''))}</span>${j.status === 'failed' ? `<button class="sm" onclick="retryJob('${j.id}')">Retry</button>` : ''}</div><div style="margin:4px 0">${esc((j.sd && j.sd.prompt) || j.text || '').slice(0, 200)}</div>${j.step && ['queued', 'running'].includes(j.status) ? `<div class="st-running dim">${esc(j.step)}</div>` : ''}${j.error ? `<div class="st-failed" style="white-space:pre-wrap;font-size:13px">${esc(String(j.error).slice(0, 400))}</div>` : ''}${(r.images || []).map(u => `<a href="${esc(u)}" target="_blank" download><img src="${esc(u)}" style="width:48%;border-radius:8px;margin:4px 1%"></a>`).join('')}</div>`; }).join('') || '<p class="dim">Nothing made yet.</p>';
 }
+const imPicShow = pasteTo('imPrompt', 'imPicPrev', d => { IMPIC = d; $('imStrRow').style.display = d ? '' : 'none'; }, 'Starting picture: the model reworks it to match your words');
+$('imStr').oninput = () => { $('imStrV').textContent = $('imStr').value; };
 $('imGo').onclick = async () => {
   const t = $('imPrompt').value.trim(); if (!t) return; const sz = IM_SIZES.find(x => x[0] === IM.size);
   $('imGo').disabled = true;
-  try { const j = await api('/api/jobs', { text: t, tool: 'image', mode: IM.model, project: SENDPJ || undefined, args: { prompt: t, count: +$('imCount').value, width: sz[2], height: sz[3], steps: $('imSteps').value || undefined, seed: $('imSeed').value, cfg: $('imCfg').value, negative: $('imNeg').value } }); if (j.error) $('imNote').textContent = j.error; await imTab(); }
+  try { const j = await api('/api/jobs', { text: t, tool: 'image', mode: IM.model, project: SENDPJ || undefined, args: { prompt: t, count: +$('imCount').value, width: sz[2], height: sz[3], steps: $('imSteps').value || undefined, seed: $('imSeed').value, cfg: $('imCfg').value, negative: $('imNeg').value, ...(IMPIC ? { strength: $('imStr').value } : {}) }, ...(IMPIC ? { image: IMPIC } : {}) }); if (j.error) $('imNote').textContent = j.error; await imTab(); }
   finally { $('imGo').disabled = false; }
 };
 setInterval(() => { if ($('images').style.display !== 'none') imTab().catch(() => { }); }, 5000);
@@ -222,15 +234,16 @@ function drawPlan() {
   $('runPlan').onclick = async () => {
     $('runPlan').disabled = true; $('runPlan').textContent = 'Sending...';
     const parts = PLAN.parts.filter(p => p.text.trim());
-    const base = { text: $('thought').value || PLAN.summary, project: SENDPJ || (PLAN.project ? PLAN.project.id : undefined), area: undefined, autonomy: 'draft', repo: PLAN.tags && PLAN.tags.repo, thread: TAB || undefined };
+    const base = { ...(SENDPIC ? { image: SENDPIC } : {}), text: $('thought').value || PLAN.summary, project: SENDPJ || (PLAN.project ? PLAN.project.id : undefined), area: undefined, autonomy: 'draft', repo: PLAN.tags && PLAN.tags.repo, thread: TAB || undefined };
     const j = parts.length === 1 ? await api('/api/jobs', { ...base, text: parts[0].text, tool: parts[0].tool, mode: parts[0].mode }) : await api('/api/jobs/parts', { ...base, parts });
-    $('last').innerHTML = jobCard(j); PLAN = null; drawPlan(); $('thought').value = ''; nowStrip();
+    $('last').innerHTML = jobCard(j); PLAN = null; drawPlan(); $('thought').value = ''; sendPicShow(null); nowStrip();
   };
 }
+const sendPicShow = pasteTo('thought', 'sendPicPrev', d => { SENDPIC = d; }, 'Goes with this request');
 $('goBtn').onclick = async () => {
   const text = $('thought').value.trim(); if (!text) return;
   $('goBtn').disabled = true; $('goBtn').textContent = 'Thinking...'; $('pick').style.display = 'none'; $('splitBox').style.display = 'none';
-  try { PLAN = await api('/api/think', { text, thread: TAB || undefined, project: SENDPJ || undefined }); if (PLAN.error) { $('planBox').innerHTML = `<p class="st-failed">${esc(PLAN.error)}</p>`; PLAN = null; } else drawPlan(); }
+  try { PLAN = await api('/api/think', { text, thread: TAB || undefined, project: SENDPJ || undefined, hasImage: !!SENDPIC }); if (PLAN.error) { $('planBox').innerHTML = `<p class="st-failed">${esc(PLAN.error)}</p>`; PLAN = null; } else drawPlan(); }
   finally { $('goBtn').disabled = false; $('goBtn').innerHTML = 'Go &#9656;'; }
 };
 /* what is going on, at the top of Send: tap to jump */
@@ -267,7 +280,7 @@ $('routeBtn').onclick = async () => {
 $('sendBtn').onclick = async () => {
   const args = {}; let repo;
   document.querySelectorAll('#extra input').forEach(i => { const k = i.id.slice(2); if (!i.value) return; if (k === 'repo') repo = i.value; else args[k] = i.value; });
-  const j = await api('/api/jobs', { text: $('thought').value, tool: $('tool').value, mode: $('mode').value, area: $('area').value, autonomy: $('autonomy').value, args, repo: repo || (routed && routed.tags && routed.tags.repo), project: $('proj').value, thread: TAB || undefined, target: routed && routed.target });
+  const j = await api('/api/jobs', { ...(SENDPIC ? { image: SENDPIC } : {}), text: $('thought').value, tool: $('tool').value, mode: $('mode').value, area: $('area').value, autonomy: $('autonomy').value, args, repo: repo || (routed && routed.tags && routed.tags.repo), project: $('proj').value, thread: TAB || undefined, target: routed && routed.target });
   $('last').innerHTML = jobCard(j); $('pick').style.display = 'none'; $('thought').value = '';
 };
 

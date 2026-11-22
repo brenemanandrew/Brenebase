@@ -70,7 +70,7 @@ async function runClaudeInner(job, claude, projectNotes = '', earlier = []) {
     model: process.env.HUB_MODEL || 'claude-opus-5-5', max_tokens: 16000,
     betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
     output_config: { effort: job.tool === 'expert' ? 'high' : 'medium' },
-    system: systemFor(job.tool, job.mode) + (projectNotes ? '\n\n' + projectNotes : ''), messages: [...earlier.map(m => ({ role: m.role, content: split(m.content).out })), { role: 'user', content: out }],
+    system: systemFor(job.tool, job.mode) + (projectNotes ? '\n\n' + projectNotes : ''), messages: [...earlier.map(m => ({ role: m.role, content: split(m.content).out })), { role: 'user', content: job.picB64 ? [{ type: 'image', source: { type: 'base64', media_type: job.pic.mime, data: job.picB64 } }, { type: 'text', text: out }] : out }],
   });
   if (r.stop_reason === 'refusal') throw new Error('Claude declined this one.');
   const text = r.content.filter(b => b.type === 'text').map(b => b.text).join('\n');

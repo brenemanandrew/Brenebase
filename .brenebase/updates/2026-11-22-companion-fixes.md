@@ -23,3 +23,5 @@ title: Companion: picture reading setup, paste pictures, faster editor, outfit c
 
 ## Fixed
 - PC tab buttons looked like they did nothing: the answer box was redrawn hidden right after every button (the tab redraws itself). The last answer now stays on screen. Tested in headless Chromium
+- Paste or drop a picture into the Send box (it goes with the request: Claude jobs see it, PC model jobs get it read first, picture jobs start from it) and into the Images prompt (picture-to-picture with stable-diffusion.cpp -i and --strength, slider "How much to change it"). Tested: both previews show, the engine got -i and --strength 0.6
+- The PC picture reader is told it is unrestricted and to describe explicit content plainly (local model only)

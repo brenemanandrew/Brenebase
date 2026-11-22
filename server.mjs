@@ -167,7 +167,7 @@ export function speakable(text, cap = 1500) {
   const cut = keep.slice(0, cap); const end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '));
   return end > cap * 0.5 ? cut.slice(0, end + 1) : cut;
 }
-function makeJob({ text, tool, mode, area, autonomy = 'draft', args = {}, repo, target, project, thread }) {
+function makeJob({ text, tool, mode, area, autonomy = 'draft', args = {}, repo, target, project, thread, pic }) {
   const th = thread && TH.get(thread); if (th && th.project && project === undefined) project = th.project;
   if (tool === 'image' && mode === 'model' && !args.specs) args = { ...args, specs: wizraSpecs(text) };
   /* Brenai Studio picture: what its page sends as api('image', { ...imageParams(), prompt }). Field names are confirmed
@@ -178,7 +178,7 @@ function makeJob({ text, tool, mode, area, autonomy = 'draft', args = {}, repo, 
     const n = Math.max(1, Math.min(8, +args.count || +((String(text).match(/\b(\d{1,2})\s*(images|pictures|pics|renders|versions)\b/i) || [])[1]) || 1));
     const ar = (String(text).match(/\b(16:9|9:16|1:1|4:3|3:4|3:2|2:3)\b/) || [])[1] || (/portrait|full body|t-?pose|standing/i.test(text) ? '2:3' : /landscape|wide|scene/i.test(text) ? '3:2' : '1:1');
     const SIZE = { '1:1': [1024, 1024], '2:3': [832, 1216], '3:2': [1216, 832], '9:16': [768, 1344], '16:9': [1344, 768], '3:4': [896, 1152], '4:3': [1152, 896] }[ar];
-    sd = { engine: { realistic: 'zimage', anime: 'illustrious', manga: 'manga' }[mode], prompt: String(args.prompt || text).replace(/^\s*[\w\s]{1,30}:\s*/, '').replace(/\b\d{1,2}\s*(images|pictures|pics|renders|versions)\b/ig, '').trim().slice(0, 2000), count: n, width: +args.width || SIZE[0], height: +args.height || SIZE[1], ...(args.steps ? { steps: +args.steps } : {}), ...(args.cfg !== undefined && args.cfg !== '' ? { cfg: +args.cfg } : {}), ...(args.seed !== undefined && args.seed !== '' ? { seed: +args.seed } : {}), ...(args.negative ? { negative: String(args.negative) } : {}) };
+    sd = { engine: { realistic: 'zimage', anime: 'illustrious', manga: 'manga' }[mode], prompt: String(args.prompt || text).replace(/^\s*[\w\s]{1,30}:\s*/, '').replace(/\b\d{1,2}\s*(images|pictures|pics|renders|versions)\b/ig, '').trim().slice(0, 2000), count: n, width: +args.width || SIZE[0], height: +args.height || SIZE[1], ...(args.steps ? { steps: +args.steps } : {}), ...(args.cfg !== undefined && args.cfg !== '' ? { cfg: +args.cfg } : {}), ...(args.seed !== undefined && args.seed !== '' ? { seed: +args.seed } : {}), ...(args.negative ? { negative: String(args.negative) } : {}), ...(args.strength ? { strength: +args.strength } : {}) };
   }
   let studioBody;
   if (tool === 'image' && ['h3'].includes(mode)) {
@@ -193,13 +193,13 @@ function makeJob({ text, tool, mode, area, autonomy = 'draft', args = {}, repo, 
   const pj = project === '' ? null : PJ.card(project) || PJ.match(text);
   /* a private (work) project's context never goes to the cloud: those jobs move to the PC model */
   if (pj && pj.private && r.backend === 'claude') r = { ...r, backend: 'pc-model', runsOn: 'pc' };
-  const job = { text, area: area || (pj && pj.area), autonomy, args, repo: repo || (pj && pj.repo && pj.repo.includes('/') && !pj.repo.includes(' ') ? pj.repo : undefined), target, project: pj ? pj.id : null, thread: th ? th.id : undefined, ...(studioBody ? { studioBody } : {}), ...(sd ? { sd } : {}), ...r };
+  const job = { text, area: area || (pj && pj.area), autonomy, args, repo: repo || (pj && pj.repo && pj.repo.includes('/') && !pj.repo.includes(' ') ? pj.repo : undefined), target, project: pj ? pj.id : null, thread: th ? th.id : undefined, ...(studioBody ? { studioBody } : {}), ...(sd ? { sd } : {}), ...(pic ? { pic } : {}), ...r };
   const safe = ['brief', 'claude', 'link', 'copilot', 'doll'].includes(r.backend) || (r.backend === 'pc-model') || (tool === 'image' && ['model', 'realistic', 'anime', 'manga', 'h3'].includes(r.mode));
   const mustAsk = r.gate === 'always' || SPENDS.includes(r.backend) || autonomy === 'ask' || (autonomy === 'draft' && !safe);
   const made = L.add({ ...job, status: mustAsk ? 'waiting' : 'ready' });
   if (sd && ['realistic', 'anime'].includes(r.mode) && /realistic|photo/i.test(text) && /anime|manga|cel|toon/i.test(text) && !args.noTwin) {
     const other = r.mode === 'realistic' ? 'anime' : 'realistic';
-    const twin = makeJob({ text, tool, mode: other, area, autonomy, args: { ...args, noTwin: true }, repo, target, project, thread });
+    const twin = makeJob({ text, tool, mode: other, area, autonomy, args: { ...args, noTwin: true }, repo, target, project, thread, pic });
     L.update(made.id, { twin: twin.id }, `the ${other} version is job ${twin.id}`);
     if (twin.status === 'ready') start(twin);
   }
@@ -222,15 +222,17 @@ async function skillCheck(j) {
 async function start(j) {
   try {
     const sc = await skillCheck(j), skillText = sc ? SK.brief(sc) : '';
+    const pb = j.pic ? picB64(j.pic) : null;
+    if (pb && j.sd) L.update(j.id, { sd: { ...j.sd, init64: pb, strength: j.sd.strength ?? 0.6 } }, 'starting from the pasted picture');
     if (j.backend === 'doll') { L.update(j.id, { status: 'running', step: 'the PC model is using the doll skill' }); const cur = CP.state().setup || {}; const d = await dollAsk(j.mode === 'new' ? `Make a new doll: ${j.text}` : j.text, j.mode === 'new' ? {} : cur); return L.update(j.id, d.error ? { status: 'failed', error: d.error } : { status: 'done', result: { text: d.note || 'Doll ready.', doll: d } }, d.error ? 'doll skill failed' : 'doll ready'); }
     if (j.backend === 'brief') { const b = brief(j, PJ.context(j.project && PJ.card(j.project), 'code', j.text) + (skillText ? '\n\n' + skillText : '')); return L.update(j.id, { status: 'done', result: { text: b.prompt }, held: b.held }, b.secrets ? `${b.secrets} secret(s) removed` : 'brief written'); }
     if (j.backend === 'link') { const f = LINKS[`${j.tool}:${j.mode}`]; return L.update(j.id, { status: 'done', result: { link: f ? f(j.target) : null, text: j.does } }, 'link ready'); }
-    if (j.backend === 'claude') { L.update(j.id, { status: 'running' }); const r = await runClaude(j, claude, PJ.context(j.project && PJ.card(j.project), 'cloud', j.text) + (skillText ? '\n\n' + skillText : ''), j.thread ? TH.history(L.list(200).filter(x => x.id !== j.id), j.thread) : []); return L.update(j.id, { status: 'done', result: { text: rejoin(r.text, r.held) } }, 'answered by Claude'); }
+    if (j.backend === 'claude') { L.update(j.id, { status: 'running' }); const r = await runClaude(pb ? { ...j, picB64: pb } : j, claude, PJ.context(j.project && PJ.card(j.project), 'cloud', j.text) + (skillText ? '\n\n' + skillText : ''), j.thread ? TH.history(L.list(200).filter(x => x.id !== j.id), j.thread) : []); return L.update(j.id, { status: 'done', result: { text: rejoin(r.text, r.held) } }, 'answered by Claude'); }
     if (j.backend === 'copilot') { const r = await runCopilot(j, j.project && PJ.card(j.project)); return r.relay ? L.update(j.id, { status: 'waiting-answer', result: { text: r.prompt, link: r.link, relay: true } }, 'Ready: copy it into Copilot, paste the answer back') : copilotAnswer(j, r.text, r.via); }
     if (j.backend === 'meshy') { L.update(j.id, { status: 'running' }); const r = await runMeshy(j); return L.update(j.id, { status: 'running', result: r }, `Meshy task ${r.task} started`); }
     if (PC_BACKENDS.includes(j.backend)) {
       const pj = j.project && PJ.card(j.project);
-      const extra = j.backend === 'claude-code' ? { prompt: brief(j, PJ.context(pj, 'code', j.text)).prompt + (skillText ? '\n\n' + skillText : ''), held: brief(j).held } : j.backend === 'pc-model' ? { system: systemFor(j.tool, j.mode) + (pj ? '\n\n' + PJ.context(pj, 'local', j.text) : '') + (skillText ? '\n\n' + skillText : ''), ...(j.thread && !j.messages ? { messages: [...TH.history(L.list(200).filter(x => x.id !== j.id), j.thread), { role: 'user', content: j.text }] } : {}) } : {};
+      const extra = j.backend === 'claude-code' ? { prompt: brief(j, PJ.context(pj, 'code', j.text)).prompt + (skillText ? '\n\n' + skillText : '') + (j.pic ? `\n\nAndrew attached a picture to this request (not readable from here; ask him for it if the work needs it).` : ''), held: brief(j).held } : j.backend === 'pc-model' ? { ...(pb ? { image64: pb, imageMime: j.pic.mime } : {}), system: systemFor(j.tool, j.mode) + (pj ? '\n\n' + PJ.context(pj, 'local', j.text) : '') + (skillText ? '\n\n' + skillText : ''), ...(j.thread && !j.messages ? { messages: [...TH.history(L.list(200).filter(x => x.id !== j.id), j.thread), { role: 'user', content: j.text }] } : {}) } : {};
       const q = L.update(j.id, { status: 'queued', ...extra }, workerOnline() ? 'sent to the PC' : 'waiting for the PC worker; asking the PC agent to start what is needed');
       if (!workerOnline()) PA.jumpstart(['worker', ...(j.backend === 'pc-model' ? ['model'] : [])]).then(n => n.length && L.update(j.id, {}, `Jumpstart: ${n.join('; ')}`)).catch(() => {});
       return q;
@@ -275,6 +277,14 @@ function startSplit({ text, plan, repo, label, thread }) {
 function fillSlot(parent, id, fill) { const sl = parent.slots.find(x => x.id === id); if (sl) sl.fill = fill; }
 
 /* called after any change to a job that belongs to a split */
+/* a picture pasted into Send or Images: kept as a file, the job carries its path; read back when the work starts */
+function savePic(dataUrl) {
+  const m = typeof dataUrl === 'string' && dataUrl.match(/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/); if (!m) return null;
+  fs.mkdirSync(IMG_DIR, { recursive: true }); const f = `in-${crypto.randomBytes(6).toString('hex')}.${m[1] === 'jpeg' ? 'jpg' : m[1]}`;
+  fs.writeFileSync(path.join(IMG_DIR, f), Buffer.from(m[2], 'base64')); return { url: `/api/img/${f}`, file: f, mime: `image/${m[1]}` };
+}
+const picB64 = pic => { try { return pic && fs.readFileSync(path.join(IMG_DIR, path.basename(pic.file))).toString('base64'); } catch { return null; } };
+
 /* the doll skill (skills/doll.md): the PC model turns words into a doll's look; checked here, never saved until he taps Save. No cloud model. */
 const SKILLS = path.join(path.dirname(new URL(import.meta.url).pathname), 'skills');
 async function dollAsk(text, current = {}) {
@@ -497,7 +507,7 @@ http.createServer(async (req, res) => {
     if (p === '/api/think' && req.method === 'POST') {
       const b = await body(req); const tg = TG.read(b.text || ''); const th = b.thread && TH.get(b.thread);
       const pj = (b.project && PJ.card(b.project)) || (tg.project && PJ.card(tg.project)) || (th && th.project && PJ.card(th.project)) || PJ.match(b.text || '');
-      const plan = await think(tg.rest || b.text, { claude, askPc, project: pj, tags: tg });
+      const plan = await think((tg.rest || b.text) + (b.hasImage ? '\n\n[Andrew attached a picture to this request. Parts that should look at it get it.]' : ''), { claude, askPc, project: pj, tags: tg });
       return send(res, 200, { ...plan, tags: tg, project: pj ? { id: pj.id, name: pj.name, private: !!pj.private } : null, hints: PJ.hints(pj, tg.rest || b.text) });
     }
     if (p === '/api/route' && req.method === 'POST') {
@@ -512,13 +522,13 @@ http.createServer(async (req, res) => {
     }
     if (p === '/api/jobs/parts' && req.method === 'POST') {
       /* one job per part; every part goes through makeJob's checks on its own */
-      const b = await body(req); const parent = L.add({ tool: 'parts', mode: 'parts', backend: 'parts', runsOn: 'cloud', label: `Parts: ${String(b.text || '').slice(0, 50)}`, text: b.text, project: b.project || null, status: 'running', children: [] });
+      const b = await body(req, 9e6); const pic = b.image ? savePic(b.image) : null; delete b.image; const parent = L.add({ tool: 'parts', mode: 'parts', backend: 'parts', runsOn: 'cloud', label: `Parts: ${String(b.text || '').slice(0, 50)}`, text: b.text, project: b.project || null, status: 'running', children: [] });
       const kids = [];
       const byIdx = {}, pending = [];
       for (const [idx, pt] of (b.parts || []).entries()) {
         const needs = (pt.needs || []).filter(n => Number.isInteger(n) && n < idx);
         if (needs.length) { pending.push({ idx, pt, needs }); continue; }
-        let j = makeJob({ text: pt.text, tool: pt.tool, mode: pt.mode, area: b.area, autonomy: b.autonomy, project: b.project, repo: b.repo, thread: b.thread }); L.update(j.id, { parent: parent.id }); byIdx[idx] = j.id; kids.push(j.id); if (j.status === 'ready') start(j).catch(() => { });
+        let j = makeJob({ text: pt.text, tool: pt.tool, mode: pt.mode, area: b.area, autonomy: b.autonomy, project: b.project, repo: b.repo, thread: b.thread, pic }); L.update(j.id, { parent: parent.id }); byIdx[idx] = j.id; kids.push(j.id); if (j.status === 'ready') start(j).catch(() => { });
       }
       const par = L.update(parent.id, { children: kids, byIdx, pending, area: b.area, autonomy: b.autonomy, repo: b.repo, thread: b.thread, status: 'done' }, `${kids.length} part(s) sent to their tools${pending.length ? `, ${pending.length} waiting for an earlier part` : ''}`);
       return send(res, 200, dress(par));
@@ -540,7 +550,7 @@ http.createServer(async (req, res) => {
       /* a PC job the worker no longer has (it was restarted or replaced) would say "running" forever: after 10 quiet minutes, fail it so Retry shows */
       for (const j of L.list(200)) if (j.status === 'running' && j.runsOn === 'pc' && Date.now() - (j.stepAt || j.startedAt || j.at) > 600000 && !(worker.busyAt && Date.now() - worker.busyAt < 60000 && (worker.busyIds || []).includes(j.id))) afterChange(L.update(j.id, { status: 'failed', error: 'Lost track of this job on the PC: the worker was restarted or replaced while it ran. Tap Retry.' }, 'lost on the PC'));
       for (const j of L.list(200)) if (j.status === 'queued' && workerOnline() && PC_BACKENDS.includes(j.backend) && !worker.can.includes(j.backend)) j.stuck = `Waiting: ${NEED[j.backend] || 'this PC cannot do ' + j.backend}.`; else delete j.stuck; return send(res, 200, { jobs: L.list(200).filter(j => !j.quiet && (!tf || j.thread === tf || (j.parent && (L.get(j.parent) || {}).thread === tf))).slice(0, 80).map(dress), worker: { online: workerOnline(), can: worker.can } }); }
-    if (p === '/api/jobs' && req.method === 'POST') { const b = await body(req); let j = makeJob(b); if (j.status === 'ready') j = await start(j); return send(res, 200, j); }
+    if (p === '/api/jobs' && req.method === 'POST') { const b = await body(req, 9e6); const pic = b.image ? savePic(b.image) : null; delete b.image; let j = makeJob({ ...b, ...(pic ? { pic } : {}) }); if (j.status === 'ready') j = await start(j); return send(res, 200, j); }
     const fm = p.match(/^\/api\/jobs\/([a-f0-9]+)\/fill$/);
     if (fm && req.method === 'POST') { const b = await body(req); const par = L.get(fm[1]); if (!par || !par.slots) return send(res, 404, {}); fillSlot(par, b.slot, b.value ? { source: b.source || 'url', value: b.value, from: 'you' } : null); L.update(par.id, {}, `${b.slot} ${b.value ? 'filled by you' : 'cleared'}`); return send(res, 200, afterChange({ parent: par.id })); }
     const ans = p.match(/^\/api\/jobs\/([a-f0-9]+)\/answer$/);
