@@ -230,12 +230,13 @@ function drawPlan() {
   const who = { claude: 'Planned by Claude', 'pc-model': 'Planned by your PC model', rules: 'Split by the rules (no model was free)' }[PLAN.by] || '';
   $('planBox').innerHTML = `<div class="card" style="border-color:var(--acc)">
     ${PLAN.summary ? `<b>${esc(PLAN.summary)}</b>` : `<b>${PLAN.parts.length === 1 ? 'One job' : PLAN.parts.length + ' parts'}</b>`}
-    <div class="dim">${esc(who)}${PLAN.local ? ' &middot; private, kept on your PC' : ''}${PLAN.project ? ' &middot; ' + esc(PLAN.project.name) : ''}</div>
+    <div class="dim">${esc(who)}${PLAN.local ? ' &middot; private, kept on your PC' : ''}${PLAN.project ? ' &middot; ' + esc(PLAN.project.name) : ''}${PLAN.skillCount ? ` &middot; searched ${PLAN.skillCount} skills` : ''}</div>${(PLAN.skillErrors || []).length ? `<div class="st-waiting" style="font-size:13px">Skills not fully searched: ${esc(PLAN.skillErrors.join('; '))}</div>` : ''}
     ${(PLAN.notes || []).map(n => `<div class="dim">${esc(n)}</div>`).join('')}
     ${PLAN.question ? `<p class="st-waiting">${esc(PLAN.question)}</p>` : ''}
     ${PLAN.parts.map((p, i) => `<div class="ppart"><div class="row" style="margin:0;flex-wrap:nowrap"><span class="pnum">${i + 1}</span><select data-i="${i}" class="ptool" style="flex:1;min-width:0">${toolOpts(p.tool + '/' + p.mode)}</select><button class="sm" data-x="${i}" title="Remove this part">&times;</button></div>
       ${p.needs && p.needs.length ? `<div class="dim" style="margin-top:4px">Waits for part ${p.needs.map(n => n + 1).join(' and ')}, then gets its result</div>` : ''}
       ${p.why ? `<div class="dim">${esc(p.why)}</div>` : ''}
+      ${(p.skills || []).length ? `<div style="margin-top:4px">${p.skills.map(k => `<span class="tag" style="border-color:var(--acc);color:var(--acc)">skill: ${esc(k)}</span>`).join(' ')}</div>` : ''}${p.private ? '<span class="tag">private, PC only</span>' : ''}
       <textarea data-t="${i}" class="ptext">${esc(p.text)}</textarea></div>`).join('')}
     <div class="row"><button class="go" id="runPlan">Run${PLAN.parts.length > 1 ? ' all ' + PLAN.parts.length : ''}</button><button class="sm" id="addPart">+ Part</button><button class="sm" id="planX">Clear</button></div>
     ${(PLAN.hints || []).length ? `<details><summary class="dim">Already known about this (${PLAN.hints.length})</summary>${PLAN.hints.map(h => `<div class="mode"><span class="tag">${esc(h.kind)}</span> ${esc(h.text)}</div>`).join('')}</details>` : ''}</div>`;
@@ -248,7 +249,7 @@ function drawPlan() {
     $('runPlan').disabled = true; $('runPlan').textContent = 'Sending...';
     const parts = PLAN.parts.filter(p => p.text.trim());
     const base = { ...(SENDPIC ? { image: SENDPIC } : {}), text: $('thought').value || PLAN.summary, project: SENDPJ || (PLAN.project ? PLAN.project.id : undefined), area: undefined, autonomy: 'draft', repo: PLAN.tags && PLAN.tags.repo, thread: TAB || undefined };
-    const j = parts.length === 1 ? await api('/api/jobs', { ...base, text: parts[0].text, tool: parts[0].tool, mode: parts[0].mode }) : await api('/api/jobs/parts', { ...base, parts });
+    const j = parts.length === 1 ? await api('/api/jobs', { ...base, text: parts[0].text, tool: parts[0].tool, mode: parts[0].mode, skills: parts[0].skills || [], private: !!parts[0].private }) : await api('/api/jobs/parts', { ...base, parts });
     $('last').innerHTML = jobCard(j); PLAN = null; drawPlan(); $('thought').value = ''; sendPicShow(null); nowStrip();
   };
 }

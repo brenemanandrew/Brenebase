@@ -214,6 +214,8 @@ async function skillCheck(j) {
   if (!SKILL_BACKENDS.includes(j.backend) || j.quiet || j.companion || j.skillCheck) return j.skillCheck || null;
   const pj = j.project && PJ.card(j.project), local = /\[\[local\]\]/i.test(j.text || '') || !!(pj && pj.private);
   const c = await SK.check(String(j.text || '').slice(0, 4000), { claude: local ? null : claude, local }).catch(e => ({ by: 'none', lines: [], used: [], errors: [`skill check failed: ${e.message || e}`] }));
+  /* skills the planner picked for this part stay picked, even if this check would have missed them */
+  for (const n of j.plannedSkills || []) { if (c.used.includes(n)) continue; const l = c.lines.find(x => x.name === n); if (l) Object.assign(l, { used: true, reason: 'picked by the planner when the jobs were worked out' }); else c.lines.push({ name: n, used: true, reason: 'picked by the planner when the jobs were worked out' }); c.used.push(n); }
   L.update(j.id, { skillCheck: c }, `skills checked (${c.by}): ${c.used.length ? 'using ' + c.used.join(', ') : 'none apply'}`);
   for (const line of SK.logLines(c)) L.update(j.id, {}, line);
   for (const e of c.errors) L.update(j.id, {}, `skills: could not read ${e}`);
@@ -510,6 +512,7 @@ http.createServer(async (req, res) => {
     if (p === '/api/think' && req.method === 'POST') {
       const b = await body(req); const tg = TG.read(b.text || ''); const th = b.thread && TH.get(b.thread);
       const pj = (b.project && PJ.card(b.project)) || (tg.project && PJ.card(tg.project)) || (th && th.project && PJ.card(th.project)) || PJ.match(b.text || '');
+      if (Date.now() - SK.pcState().at > 600000 && worker.can.includes('skills-list') && !L.list(200).some(x => x.backend === 'skills-list' && ['queued', 'running'].includes(x.status))) L.add({ tool: 'skills', mode: 'read', backend: 'skills-list', runsOn: 'pc', label: 'Read the skill folders on the PC', text: 'Read every SKILL.md in the PC skill folders.', status: 'queued', quiet: true });
       const plan = await think((tg.rest || b.text) + (b.hasImage ? '\n\n[Andrew attached a picture to this request. Parts that should look at it get it.]' : ''), { claude, askPc, project: pj, tags: tg });
       return send(res, 200, { ...plan, tags: tg, project: pj ? { id: pj.id, name: pj.name, private: !!pj.private } : null, hints: PJ.hints(pj, tg.rest || b.text) });
     }
@@ -531,7 +534,7 @@ http.createServer(async (req, res) => {
       for (const [idx, pt] of (b.parts || []).entries()) {
         const needs = (pt.needs || []).filter(n => Number.isInteger(n) && n < idx);
         if (needs.length) { pending.push({ idx, pt, needs }); continue; }
-        let j = makeJob({ text: pt.text, tool: pt.tool, mode: pt.mode, area: b.area, autonomy: b.autonomy, project: b.project, repo: b.repo, thread: b.thread, pic }); L.update(j.id, { parent: parent.id }); byIdx[idx] = j.id; kids.push(j.id); if (j.status === 'ready') start(j).catch(() => { });
+        let j = makeJob({ text: pt.text, tool: pt.tool, mode: pt.mode, area: b.area, autonomy: b.autonomy, project: pt.private ? 'work' : b.project, repo: b.repo, thread: b.thread, pic }); L.update(j.id, { parent: parent.id, ...(pt.skills && pt.skills.length ? { plannedSkills: pt.skills } : {}) }); byIdx[idx] = j.id; kids.push(j.id); if (j.status === 'ready') start(j).catch(() => { });
       }
       const par = L.update(parent.id, { children: kids, byIdx, pending, area: b.area, autonomy: b.autonomy, repo: b.repo, thread: b.thread, status: 'done' }, `${kids.length} part(s) sent to their tools${pending.length ? `, ${pending.length} waiting for an earlier part` : ''}`);
       return send(res, 200, dress(par));
@@ -553,7 +556,7 @@ http.createServer(async (req, res) => {
       /* a PC job the worker no longer has (it was restarted or replaced) would say "running" forever: after 10 quiet minutes, fail it so Retry shows */
       for (const j of L.list(200)) if (j.status === 'running' && j.runsOn === 'pc' && Date.now() - (j.stepAt || j.startedAt || j.at) > 600000 && !(worker.busyAt && Date.now() - worker.busyAt < 60000 && (worker.busyIds || []).includes(j.id))) afterChange(L.update(j.id, { status: 'failed', error: 'Lost track of this job on the PC: the worker was restarted or replaced while it ran. Tap Retry.' }, 'lost on the PC'));
       for (const j of L.list(200)) if (j.status === 'queued' && workerOnline() && PC_BACKENDS.includes(j.backend) && !worker.can.includes(j.backend)) j.stuck = `Waiting: ${NEED[j.backend] || 'this PC cannot do ' + j.backend}.`; else delete j.stuck; return send(res, 200, { jobs: L.list(200).filter(j => !j.quiet && (!tf || j.thread === tf || (j.parent && (L.get(j.parent) || {}).thread === tf))).slice(0, 80).map(dress), worker: { online: workerOnline(), can: worker.can } }); }
-    if (p === '/api/jobs' && req.method === 'POST') { const b = await body(req, 9e6); const pic = b.image ? savePic(b.image) : null; delete b.image; let j = makeJob({ ...b, ...(pic ? { pic } : {}) }); if (j.status === 'ready') j = await start(j); return send(res, 200, j); }
+    if (p === '/api/jobs' && req.method === 'POST') { const b = await body(req, 9e6); const pic = b.image ? savePic(b.image) : null; delete b.image; const planned = Array.isArray(b.skills) ? b.skills.map(String).slice(0, 12) : null; if (b.private) b.project = 'work'; delete b.skills; delete b.private; let j = makeJob({ ...b, ...(pic ? { pic } : {}) }); if (planned && planned.length) j = L.update(j.id, { plannedSkills: planned }); if (j.status === 'ready') j = await start(j); return send(res, 200, j); }
     const fm = p.match(/^\/api\/jobs\/([a-f0-9]+)\/fill$/);
     if (fm && req.method === 'POST') { const b = await body(req); const par = L.get(fm[1]); if (!par || !par.slots) return send(res, 404, {}); fillSlot(par, b.slot, b.value ? { source: b.source || 'url', value: b.value, from: 'you' } : null); L.update(par.id, {}, `${b.slot} ${b.value ? 'filled by you' : 'cleared'}`); return send(res, 200, afterChange({ parent: par.id })); }
     const ans = p.match(/^\/api\/jobs\/([a-f0-9]+)\/answer$/);

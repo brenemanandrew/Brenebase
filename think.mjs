@@ -9,6 +9,7 @@
    The plan is shown before anything runs; nothing is sent to a tool until Andrew taps Run. */
 import { TOOLS, resolve } from './tools.mjs';
 import { vet } from './vet.mjs';
+import * as SK from './skills.mjs';
 
 const CATALOGUE = () => TOOLS.map(t => `${t.id}: ${t.what}\n` + Object.entries(t.modes).map(([k, m]) => `  ${t.id}/${k}: ${m.does}`).join('\n')).join('\n');
 
@@ -19,19 +20,20 @@ const SCHEMA = {
     question: { type: 'string', description: 'One question if something important is unclear, else empty' },
     parts: {
       type: 'array', items: {
-        type: 'object', additionalProperties: false, required: ['tool', 'mode', 'text', 'why', 'needs'],
+        type: 'object', additionalProperties: false, required: ['tool', 'mode', 'text', 'why', 'needs', 'skills'],
         properties: {
           tool: { type: 'string' }, mode: { type: 'string' },
           text: { type: 'string', description: 'The instruction this tool gets. Self-contained, only what this tool needs.' },
           why: { type: 'string', description: 'A few words: why this tool' },
           needs: { type: 'array', items: { type: 'integer' }, description: 'Numbers (0-based) of earlier parts whose result this part must wait for and use' },
+          skills: { type: 'array', items: { type: 'string' }, description: 'Names of the skills (from the list) this part should follow; empty if none apply' },
         },
       },
     },
   },
 };
 
-const SYSTEM = () => `You are the planner inside Brenebase, Andrew's hub. Read his whole request and split it into the fewest parts that each go to ONE tool. Never use em dashes.
+const SYSTEM = (skillIndex = '') => `You are the planner inside Brenebase, Andrew's hub. Read his whole request and split it into the fewest parts that each go to ONE tool. Never use em dashes.
 
 Rules
 - One part when one tool can do it all. Split only when parts really belong to different tools.
@@ -43,14 +45,18 @@ Rules
 - Do not invent work he did not ask for. Do not add review or test parts unless he asked.
 - If the request is a feeling, a vent or chat, one companion part.
 - Use only these tools and modes (tool/mode):
-${CATALOGUE()}`;
+${CATALOGUE()}${skillIndex ? `
+
+Skills Brenebase has. Search this list for every part: read each description, including what it is NOT for, and put the names of the skills that part should follow in its "skills". A skill can also show which tool fits best (a Meshy skill means the 3D tool, a picture skill the Images tool, a work skill a private PC part). None is a valid answer.
+${skillIndex}` : ''}`;
 
 export function isPrivate(text, { project, tags } = {}) {
   return /\[\[local\]\]/i.test(text) || !!(project && project.private) || !!(tags && (tags.found || []).some(t => /^(work|hubbell|staging lane)$/i.test(t)));
 }
 
+let KNOWN = new Set();
 function clean(plan, by) {
-  const parts = (plan.parts || []).map(p => { const r = resolve(p.tool, p.mode) || resolve(p.tool); return r ? { tool: r.tool, mode: r.mode, label: r.label, text: String(p.text || '').trim(), why: p.why || '', needs: (p.needs || []).filter(n => Number.isInteger(n) && n >= 0) } : null; });
+  const parts = (plan.parts || []).map(p => { const r = resolve(p.tool, p.mode) || resolve(p.tool); return r ? { tool: r.tool, mode: r.mode, label: r.label, text: String(p.text || '').trim(), why: p.why || '', needs: (p.needs || []).filter(n => Number.isInteger(n) && n >= 0), skills: (p.skills || []).map(String).filter(n => KNOWN.has(n)) } : null; });
   /* a part whose tool did not exist is dropped; needs are renumbered and may only point backwards */
   const map = []; const kept = [];
   parts.forEach((p, i) => { if (p && p.text) { map[i] = kept.length; kept.push(p); } });
@@ -60,6 +66,20 @@ function clean(plan, by) {
 
 export async function think(text, { claude, askPc, project, tags } = {}) {
   const local = isPrivate(text, { project, tags });
+  /* the skills are searched while the jobs are worked out, not only when each job starts */
+  const all = SK.all(); KNOWN = new Set(all.skills.map(s => s.name));
+  const skillIndex = all.skills.map(s => `- ${s.name}: ${s.description}`).join('\n');
+  /* a part's skills also steer its tool: a Meshy skill means the 3D tool, a picture skill the Images tool, the doll skill the Doll tool,
+     and work (kaizen) stays private on the PC */
+  const STEER = { 'meshy-3d': ['make3d', 'generate'], 'picture-prompts': ['image', null], 'doll': ['doll', null], 'kaizen-a3': ['expert', 'kaizen'] };
+  const withSkills = p => {
+    for (const part of p.parts) {
+      const rules = SK.ruleCheck(part.text, all.skills).filter(x => x.used).map(x => x.name); part.skills = [...new Set([...(part.skills || []), ...rules])];
+      for (const sk of part.skills) { const st = STEER[sk]; if (!st || part.tool === st[0]) continue; const r = resolve(st[0], st[1] || (st[0] === 'image' ? (/anime|manga|cel/i.test(part.text) ? 'anime' : 'realistic') : st[0] === 'doll' ? (/new doll/i.test(part.text) ? 'new' : 'edit') : undefined)); if (r) { Object.assign(part, { tool: r.tool, mode: r.mode, label: r.label, why: `${part.why ? part.why + '; ' : ''}skill ${sk} says ${r.label}` }); break; } }
+      if (part.skills.includes('kaizen-a3')) part.private = true;
+    }
+    return { ...p, skillErrors: all.errors, skillCount: all.skills.length };
+  };
   const tries = local ? ['pc'] : [claude ? 'claude' : null, askPc ? 'pc' : null].filter(Boolean);
   const notes = [];
   for (const who of tries) {
@@ -69,21 +89,21 @@ export async function think(text, { claude, askPc, project, tags } = {}) {
           model: process.env.HUB_ROUTER_MODEL || 'claude-opus-5-5', max_tokens: 4000,
           betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
           output_config: { effort: 'low', format: { type: 'json_schema', schema: SCHEMA } },
-          system: SYSTEM(), messages: [{ role: 'user', content: text }],
+          system: SYSTEM(skillIndex), messages: [{ role: 'user', content: text }],
         });
         if (r.stop_reason === 'refusal') { notes.push('Claude would not plan this one'); continue; }
         const t = r.content.find(b => b.type === 'text'); const p = t && clean(JSON.parse(t.text), 'claude');
-        if (p) return { ...p, local, notes };
+        if (p) return withSkills({ ...p, local, notes });
       }
       if (who === 'pc' && askPc) {
-        const out = await askPc(`${SYSTEM()}\n\nAnswer with JSON only, in this shape: {"summary":"","question":"","parts":[{"tool":"","mode":"","text":"","why":"","needs":[]}]}`, text);
+        const out = await askPc(`${SYSTEM(skillIndex)}\n\nAnswer with JSON only, in this shape: {"summary":"","question":"","parts":[{"tool":"","mode":"","text":"","why":"","needs":[],"skills":[]}]}`, text);
         const m = out && out.match(/\{[\s\S]*\}/); const p = m && clean(JSON.parse(m[0]), 'pc-model');
-        if (p) return { ...p, local, notes };
+        if (p) return withSkills({ ...p, local, notes });
         notes.push(out == null ? 'The PC worker or model is not free right now' : 'The PC model did not give a usable plan');
       }
     } catch (e) { notes.push(`${who === 'claude' ? 'Claude' : 'The PC model'}: ${String(e.message || e).slice(0, 160)}`); }
   }
   /* nobody could think about it: the rules */
   const v = vet(text);
-  return { by: 'rules', summary: '', question: '', local, notes: local && !askPc ? [...notes, 'Private request and the PC worker is offline, so the rules split it'] : notes, parts: v.parts.map(p => ({ ...p, needs: [] })) };
+  return withSkills({ by: 'rules', summary: '', question: '', local, notes: local && !askPc ? [...notes, 'Private request and the PC worker is offline, so the rules split it'] : notes, parts: v.parts.map(p => ({ ...p, needs: [] })) });
 }
