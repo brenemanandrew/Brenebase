@@ -27,7 +27,7 @@
      BRENEBASE_DIR     folder holding worker\hub-worker.mjs (default: the folder above this file)
    Run by hand: node brenebase-agent.mjs */
 import http from 'http';
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
@@ -75,6 +75,8 @@ function startHelper(name) {
   if (!h.file) return `${h.label} is not set up on this PC`;
   if (!fs.existsSync(h.file)) return `${h.label}: file not found (${h.file})`;
   if (alive(running[name])) return `${h.label} already running`;
+  /* a worker left running by an earlier copy of the agent is not ours and runs old code: stop it first (Windows) */
+  if (name === 'worker' && process.platform === 'win32') { try { spawnSync('powershell', ['-NoProfile', '-Command', "Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | Where-Object { $_.CommandLine -like '*hub-worker.mjs*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"], { windowsHide: true, timeout: 15000 }); } catch { } }
   const p = spawn(process.execPath, [h.file], { cwd: path.dirname(h.file), env: { ...process.env, ...(h.env || {}) }, windowsHide: true });
   p.log = []; const keep = d => { p.log.push(...String(d).split('\n').filter(Boolean)); p.log = p.log.slice(-60); };
   p.stdout.on('data', keep); p.stderr.on('data', keep); p.on('exit', (c, sig) => { p.ended = true; keep(`(stopped, code ${c}${sig ? ', ' + sig : ''})`); });

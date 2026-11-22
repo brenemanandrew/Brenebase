@@ -21,3 +21,6 @@ title: Pictures run by Brenebase itself, Images tab
 
 ## Open
 - MiniMax-H3 movies still go through Brenai Studio until the engine's options are read
+
+## Fixed
+- An old worker left running by an earlier copy of the agent kept answering with old code (no pictures), while the agent showed its own worker as stopped. The agent now stops any stray hub-worker.mjs before it starts the worker (Windows)
