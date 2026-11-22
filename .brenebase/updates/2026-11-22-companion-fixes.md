@@ -20,3 +20,6 @@ title: Companion: picture reading setup, paste pictures, faster editor, outfit c
 
 ## Not tested
 - lms get on Andrew's PC (the model name and the -y flag); a real vision model; how Studio reads pictures (needs the new probe's output)
+
+## Fixed
+- PC tab buttons looked like they did nothing: the answer box was redrawn hidden right after every button (the tab redraws itself). The last answer now stays on screen. Tested in headless Chromium
