@@ -18,7 +18,10 @@
   /* the look: colours, hairstyle, clothes, body shape and bounce. Always dressed. */
   const DEF = { skin: '#f4ecef', hair: '#0b0b10', lip: '#4a1f3a', iris: '#3b2f4f', top: '#2a2234', shirt: '#e6dbe0', bottom: '#2b3550', shoes: '#1c1a22', bg1: '#8a5bb8', bg2: '#2a1b4d',
     hairStyle: 'long', topStyle: 'hoodie', bottomStyle: 'jeans', shoeStyle: 'boots', glasses: false, shoulders: 0.5, bust: 0.5, waist: 0.5, hips: 0.5, thighs: 0.5, arms: 0.5, legs: 0.5, bounce: 0.5 };
-  const LK = () => { const L = Object.assign({}, DEF, window.COMPANION_LOOK || {}); L.top2 = L.top; for (const k of ['shoulders', 'bust', 'waist', 'hips', 'thighs', 'arms', 'legs', 'bounce']) L[k] = Math.max(0, Math.min(1, +L[k])); return L; };
+  /* what she has on right now (the wardrobe): an outer piece taken off shows her base layer, a plain sporty tank and shorts that always stay on */
+  const BASE = '#3b3a46';
+  const LK = () => { const L = Object.assign({}, DEF, window.COMPANION_LOOK || {}), W = window.COMPANION_WORN || {};
+    if (W.top === false) { if (L.topStyle === 'dress') { L.bottomStyle = 'base'; L.bottom = BASE; } L.topStyle = 'base'; L.top = BASE; } if (W.bottom === false) { L.bottomStyle = 'base'; L.bottom = BASE; } if (W.shoes === false) L.shoeStyle = 'bare'; if (W.glasses === false) L.glasses = false; L.top2 = L.top; for (const k of ['shoulders', 'bust', 'waist', 'hips', 'thighs', 'arms', 'legs', 'bounce']) L[k] = Math.max(0, Math.min(1, +L[k])); return L; };
   const INK = '#111';
   const shade = (hex, f) => { const n = parseInt(hex.slice(1), 16); const c = [n >> 16, (n >> 8) & 255, n & 255].map(v => Math.max(0, Math.min(255, Math.round(v * f)))); return '#' + c.map(v => v.toString(16).padStart(2, '0')).join(''); };
   /* body measurements from the sliders (puppet space: head centre 100,96; feet near y 470) */
@@ -27,7 +30,7 @@
     const hipY = 270, kneeY = hipY + 86 * leg, ankY = kneeY + 84 * leg;
     return { sh, bust, w, h, th: 0.85 + L.thighs * 0.35, ar: 0.85 + L.arms * 0.35, hipY, kneeY, ankY, footY: ankY + 12, crotchY: hipY + 20, chestY: 190, waistY: 236 };
   };
-  const TOPS = { hoodie: { end: 280, sleeve: 'long', neck: 'hood' }, tee: { end: 270, sleeve: 'short', neck: 'crew' }, tank: { end: 266, sleeve: 'none', neck: 'scoop' }, sweater: { end: 284, sleeve: 'long', neck: 'high' }, blouse: { end: 268, sleeve: 'long', neck: 'v' }, crop: { end: 222, sleeve: 'short', neck: 'crew' }, dress: { end: 0, sleeve: 'short', neck: 'scoop' } };
+  const TOPS = { hoodie: { end: 280, sleeve: 'long', neck: 'hood' }, tee: { end: 270, sleeve: 'short', neck: 'crew' }, tank: { end: 266, sleeve: 'none', neck: 'scoop' }, sweater: { end: 284, sleeve: 'long', neck: 'high' }, blouse: { end: 268, sleeve: 'long', neck: 'v' }, crop: { end: 222, sleeve: 'short', neck: 'crew' }, base: { end: 232, sleeve: 'none', neck: 'scoop' }, dress: { end: 0, sleeve: 'short', neck: 'scoop' } };
   function torsoPath(B, end, pad = 0) {
     const s = B.sh + pad, cw = 22 + B.bust * 5 + pad, w = B.w + pad, h = B.h + pad;
     const yEnd = end, wy = B.waistY;
@@ -59,7 +62,8 @@
     let out = `<path d="${torsoPath(B, B.hipY + 4)}" fill="${L.skin}" stroke="${INK}" stroke-width="2.4"/>`;   // skin under everything (shows at a crop top's midriff)
     /* bottoms (under the top) */
     const bs = dress ? 'skirtlong' : L.bottomStyle;
-    if (bs === 'skirt' || bs === 'skirtlong') { const yb = bs === 'skirt' ? 330 : 350, flare = bs === 'skirt' ? 16 : 22; out += `<path d="M${100 - B.w - 1} ${B.waistY - 4} L${100 + B.w + 1} ${B.waistY - 4} L${100 + B.h + flare} ${yb} Q100 ${yb + 8} ${100 - B.h - flare} ${yb} Z" fill="${dress ? top : bot}" stroke="${INK}" stroke-width="2.4"/><path d="M${100 - B.h} ${yb - 4} L${100 - B.h - 6} ${yb - 40} M100 ${yb + 2} L100 ${yb - 46} M${100 + B.h} ${yb - 4} L${100 + B.h + 6} ${yb - 40}" stroke="${shade(dress ? top : bot, 0.7)}" stroke-width="2" fill="none"/>`; }
+    if (bs === 'base') out += `<path d="M${100 - B.w - 1} ${B.waistY - 4} C${100 - B.h - 2} ${B.waistY + 14} ${100 - B.h - 2} ${B.hipY - 10} ${100 - B.h} ${B.hipY + 6} L100 ${B.crotchY} L${100 + B.h} ${B.hipY + 6} C${100 + B.h + 2} ${B.hipY - 10} ${100 + B.h + 2} ${B.waistY + 14} ${100 + B.w + 1} ${B.waistY - 4} Z" fill="${bot}" stroke="${INK}" stroke-width="2.4"/>`;
+    else if (bs === 'skirt' || bs === 'skirtlong') { const yb = bs === 'skirt' ? 330 : 350, flare = bs === 'skirt' ? 16 : 22; out += `<path d="M${100 - B.w - 1} ${B.waistY - 4} L${100 + B.w + 1} ${B.waistY - 4} L${100 + B.h + flare} ${yb} Q100 ${yb + 8} ${100 - B.h - flare} ${yb} Z" fill="${dress ? top : bot}" stroke="${INK}" stroke-width="2.4"/><path d="M${100 - B.h} ${yb - 4} L${100 - B.h - 6} ${yb - 40} M100 ${yb + 2} L100 ${yb - 46} M${100 + B.h} ${yb - 4} L${100 + B.h + 6} ${yb - 40}" stroke="${shade(dress ? top : bot, 0.7)}" stroke-width="2" fill="none"/>`; }
     else out += `<path d="M${100 - B.w - 1} ${B.waistY - 4} C${100 - B.h - 2} ${B.waistY + 14} ${100 - B.h - 2} ${B.hipY - 10} ${100 - B.h} ${B.hipY + 6} L100 ${B.crotchY} L${100 + B.h} ${B.hipY + 6} C${100 + B.h + 2} ${B.hipY - 10} ${100 + B.h + 2} ${B.waistY + 14} ${100 + B.w + 1} ${B.waistY - 4} Z" fill="${bot}" stroke="${INK}" stroke-width="2.4"/>`;
     /* the top: body, then the chest as its own part so it can move */
     out += `<path d="${torsoPath(B, end, 2)}" fill="${top}" stroke="${INK}" stroke-width="2.4"/>`;
@@ -192,16 +196,18 @@
     }
     function drawLegs() {
       const bs = L.topStyle === 'dress' ? 'skirtlong' : L.bottomStyle, bot = L.bottom;
-      const legCol = seg => bs === 'jeans' || bs === 'leggings' ? (bs === 'leggings' ? shade(bot, 0.8) : bot) : skin;
+      const legCol = seg => bs === 'base' ? skin : bs === 'jeans' || bs === 'leggings' ? (bs === 'leggings' ? shade(bot, 0.8) : bot) : skin;
       let s = '';
       for (const side of [-1, 1]) {
         const hx = 100 + side * (B.h * 0.5), kx = 100 + side * (B.h * 0.42), ax = 100 + side * (B.h * 0.38);
         if (bs === 'shorts') s += limb([[hx, B.hipY], [hx + (kx - hx) * 0.45, B.hipY + (B.kneeY - B.hipY) * 0.45]], [26], [bot]);
         s += limb([[hx, B.hipY + 6], [kx, B.kneeY], [ax, B.ankY]], [(bs === 'leggings' ? 21 : 23) * B.th, (bs === 'leggings' ? 15 : 17) * (0.6 + B.th * 0.4)], [legCol(0), legCol(1)]);
         if (bs === 'shorts') s += limb([[hx, B.hipY], [hx + (kx - hx) * 0.42, B.hipY + (B.kneeY - B.hipY) * 0.42]], [25], [bot]);
+        if (bs === 'base') s += limb([[hx, B.hipY], [hx + (kx - hx) * 0.3, B.hipY + (B.kneeY - B.hipY) * 0.3]], [25 * B.th], [bot]);
         const sc = L.shoes, fx = ax + side * 5, fy = B.footY - 5;
         if (L.shoeStyle === 'boots') s += `<rect x="${ax - 10}" y="${B.ankY - 34}" width="20" height="38" rx="4" fill="${sc}" stroke="${INK}" stroke-width="2.2"/><ellipse cx="${fx}" cy="${fy}" rx="14" ry="7.5" fill="${sc}" stroke="${INK}" stroke-width="2.2"/><rect x="${ax - 9}" y="${B.ankY - 30}" width="18" height="34" fill="${sc}"/>`;
         else if (L.shoeStyle === 'sneakers') s += `<ellipse cx="${fx}" cy="${fy}" rx="14" ry="7.5" fill="${sc}" stroke="${INK}" stroke-width="2.2"/><path d="M${fx - 14} ${fy + 3} L${fx + 14} ${fy + 3}" stroke="#f2f2f2" stroke-width="3"/>`;
+        else if (L.shoeStyle === 'bare') s += `<ellipse cx="${fx}" cy="${fy + 1}" rx="11" ry="5.5" fill="${skin}" stroke="${INK}" stroke-width="2"/>`;
         else s += `<ellipse cx="${fx}" cy="${fy + 1}" rx="12" ry="6" fill="${sc}" stroke="${INK}" stroke-width="2.2"/>`;
       }
       P.legs.innerHTML = s;
@@ -305,6 +311,24 @@
     const say = document.createElement('div'); say.style.cssText = 'position:absolute;left:8%;right:8%;top:4%;background:#fff;color:#111;border:2px solid #111;border-radius:14px;padding:6px 10px;font:600 14px system-ui;text-align:center;opacity:0;transition:opacity .2s;pointer-events:none;z-index:3';
     stage.appendChild(say); let sayT = 0;
     function speak(t, ms = 3200) { say.textContent = t; say.style.opacity = 1; clearTimeout(sayT); sayT = setTimeout(() => { say.style.opacity = 0; }, ms); }
+    /* the wardrobe: drag a piece off her (it flies off and she reacts), drag or tap it back on from the tray */
+    const ICON = { top: '\u{1F45A}', bottom: '\u{1F456}', shoes: '\u{1F45F}', glasses: '\u{1F453}' };
+    const OFF = { top: [['blush', 'crossarms', 'Hey! Eyes up here.'], ['surprised', 'jolt', 'Excuse me?!'], ['joy', 'laugh', 'Brr, it is cold!']], bottom: [['blush', 'cringe', 'Seriously?!'], ['eyeroll', 'hips', 'Real mature.'], ['surprised', 'jump', 'Whoa, hands!']], shoes: [['joy', 'feet', 'Careful, ticklish feet!'], ['playful', 'bounce', 'Free toes!']], glasses: [['dizzy', 'tilt', 'I cannot see a thing!'], ['suspicious', 'shift', 'Give those back.']] };
+    const ON = [['happy', 'flip', 'Better.'], ['playful', 'dance', 'Looking good, right?'], ['joy', 'bounce', 'Thanks!']];
+    const W = () => (window.COMPANION_WORN ||= {});
+    const wearing = item => { const L = Object.assign({}, DEF, window.COMPANION_LOOK || {}); return W()[item] !== false && (item !== 'glasses' || !!L.glasses); };
+    function rebuild() { const v = R.view ? R.view() : 'portrait'; R.dispose(); R = puppet(stage); stage.appendChild(em); stage.appendChild(say); if (R.setView) R.setView(v); }
+    const pickOne = a => a[Math.random() * a.length | 0];
+    function wear(item, on) {
+      if (on === wearing(item)) return; W()[item] = !!on; rebuild();
+      const [f, g, line] = pickOne(on ? ON : OFF[item]); show(f, 3200); doGesture(g, 2.6); speak(line); if (R.jolt) R.jolt(on ? 30 : -45);
+      if (opts.onWardrobe) opts.onWardrobe({ ...W() }, item, on);
+    }
+    const itemAt = zn => ({ chest: 'top', belly: 'top', shoulders: 'top', arms: 'top', hips: 'bottom', legs: 'bottom', feet: 'shoes', face: 'glasses', nose: 'glasses' })[zn];
+    let ghost = null;
+    function ghostAt(x, y, ch) { if (!ghost) { ghost = document.createElement('div'); ghost.style.cssText = 'position:absolute;font-size:44px;pointer-events:none;z-index:4;transform:translate(-50%,-50%) rotate(-12deg);transition:none'; stage.appendChild(ghost); } ghost.textContent = ch; const r = stage.getBoundingClientRect(); ghost.style.left = (x - r.left) + 'px'; ghost.style.top = (y - r.top) + 'px'; }
+    function ghostFly(dx, dy) { const g = ghost; ghost = null; if (!g) return; g.style.transition = 'transform .7s cubic-bezier(.3,1.4,.6,1), opacity .7s'; requestAnimationFrame(() => { g.style.transform = `translate(${dx * 4 - 50}%, ${dy * 4 + 200}%) rotate(${dx > 0 ? 540 : -540}deg) scale(.5)`; g.style.opacity = 0; }); setTimeout(() => g.remove(), 800); }
+    function ghostBack() { const g = ghost; ghost = null; if (g) g.remove(); }
     let mood = 'neutral', temp = null, tempUntil = 0, thinking = false, talkUntil = 0, emoteUntil = 0;
     let blinkAt = performance.now() + 2000, blinkEnd = 0, glanceAt = 0, gaze = { x: 0, y: 0 }, look = { x: 0, y: 0 }, pointerLook = null, pointerLookUntil = 0;
     const sp = { rot: { x: 0, v: 0 }, tx: { x: 0, v: 0 }, ty: { x: 0, v: 0 }, sq: { x: 0, v: 0 } }; // springs, rest at 0
@@ -361,10 +385,12 @@
     const onHerAt = p => Math.abs(p.x - 100) < 70 && p.y > 28 && p.y < 480;
     stage.addEventListener('pointerdown', e => { if (multi) return; const p = at(e), inRoom = !!(R.fp && R.fp()); down = { ...p, sx: p.x, t: now(), path: 0, pet: 0, look: inRoom && !onHerAt(p), cx: e.clientX, cy: e.clientY, px: 0 };
       if (inRoom && document.activeElement && document.activeElement.blur) document.activeElement.blur();   // so the keys walk you instead of typing
+      if (opts.wardrobe && R.view && R.view() === 'full' && R.zone) { const it = itemAt(R.zone(p)); if (it && wearing(it)) down.cloth = it; }
       try { stage.setPointerCapture(e.pointerId); } catch {} e.preventDefault(); });
     stage.addEventListener('pointermove', e => {
       const p = at(e); pointerLook = { x: (p.x - 100) / 30, y: (p.y - 100) / 34 }; pointerLookUntil = now() + 1500;
       if (!down || multi) return;
+      if (down.cloth) { const dd = Math.hypot(e.clientX - down.cx, e.clientY - down.cy); if (dd > 16 || down.dragging) { if (!down.dragging) { down.dragging = true; show('surprised', 900); } ghostAt(e.clientX, e.clientY, ICON[down.cloth]); down.dd = dd; down.ex = e.clientX - down.cx; down.ey = e.clientY - down.cy; return; } }
       if (down.look) { const mx = e.clientX - down.cx, my = e.clientY - down.cy; down.cx = e.clientX; down.cy = e.clientY; down.px += Math.hypot(mx, my); if (down.px > 6) R.look(mx, my); return; } // visiting: dragging turns your head
       const d = Math.hypot(p.x - down.x, p.y - down.y); down.path += d;
       if (p.y < 92 && now() - down.t > 250) { down.pet += d; if (down.pet > 30) react('pet'); }
@@ -372,6 +398,7 @@
     });
     const up = e => {
       if (!down || multi) { down = null; return; } const p = at(e), d = down, ms = now() - d.t, dx = p.x - d.sx; down = null;
+      if (d.dragging) { if (d.dd > 60) { ghostFly(d.ex, d.ey); wear(d.cloth, false); } else ghostBack(); return; }
       const point = () => { const hit = R.pick(e); if (hit) { const what = R.direct(hit); if (what) { show('surprised', 500); doGesture('nod', 1.2); if (opts.onTouch) opts.onTouch(what); } } };
       if (d.look) { if (d.px <= 8 && R.pick) point(); return; }
       if (Math.abs(dx) > 55 && ms < 380) return touched('swat', Math.sign(dx));
@@ -447,7 +474,7 @@
         let wait = 0; for (const [name, dur] of found.slice(0, 2)) { const hold = dur * (QUICK.has(name) ? 1 : 1.5); setTimeout(() => doGesture(name, hold), wait); wait += hold * 1000 + 1200; }   // each pose is held, then a breath before the next
         return found.map(f => f[0]);
       },
-      gesture: doGesture, speak, faces: () => Object.keys(FACE),
+      gesture: doGesture, speak, wear, wearing, worn: () => ({ top: wearing('top'), bottom: wearing('bottom'), shoes: wearing('shoes'), glasses: wearing('glasses') }), faces: () => Object.keys(FACE),
       // whether she is in the room: 'gone' (already out), 'leave' (walks out now), 'return' (walks back in; opts.sneak = quietly)
       presence(mode, o) { if (R.presence) R.presence(mode, o || {}); },
       // a video call while she is out: she appears wherever she really is (scene = the backdrop), until call(false)

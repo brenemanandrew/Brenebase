@@ -108,6 +108,7 @@ h3{margin:18px 0 6px}.mode{margin:4px 0 4px 10px}
   <div id="cpFull" style="display:none;position:fixed;inset:0;z-index:50;background:#0b0c10;flex-direction:column">
     <div style="display:flex;align-items:center;gap:8px;padding:10px 12px"><b id="cpFullName" style="flex:1"></b><div class="icons" style="margin:0"><button id="cpFullEdit" title="Edit her look">&#9999;&#65039;</button><button id="cpFullX" title="Close">&#10005;</button></div></div>
     <div id="cpFullStage" style="flex:1;min-height:0;display:flex;justify-content:center"></div>
+    <div id="cpTray" style="display:flex;gap:8px;justify-content:center;min-height:0;padding:4px 10px;flex-wrap:wrap"></div>
     <div id="cpFullSay" class="dim" style="padding:6px 14px;max-height:22vh;overflow:auto;white-space:pre-wrap"></div>
     <div style="display:flex;gap:6px;padding:8px 10px 14px"><input id="cpFullIn" placeholder="Say it." style="flex:1;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--text)"><button class="go" id="cpFullSend">Send</button></div>
   </div>
@@ -315,10 +316,10 @@ const CP_MOVES = ['', 'wave', 'fingerwave', 'cheer', 'stretch', 'crossarms', 'hi
 const CP_MODES = [['chat', 'Just talk'], ['vent', 'Vent'], ['roleplay', 'Roleplay'], ['coach', 'Coach']];
 const CP_VOICES = ['af_heart', 'af_bella', 'af_nicole', 'af_sarah', 'af_sky', 'af_nova', 'af_river', 'af_jessica', 'af_kore', 'af_aoede', 'am_michael', 'am_fenrir', 'am_puck', 'am_echo', 'am_eric', 'am_liam', 'am_onyx', 'am_adam', 'bf_emma', 'bf_isabella', 'bf_lily', 'bm_george', 'bm_fable', 'bm_lewis', 'bm_daniel'];
 let CP = null, cpAv = null, cpMode = localStorage.getItem('cpMode') || 'chat', cpSeen = 0, cpTimer = 0, cpDraft = null, cpPic = null;
-function cpLoadAvatar(look, el, view) { return new Promise(ok => { window.COMPANION_LOOK = look || {}; const go = () => { window.COMPANION_REACT = $('cpSetup').style.display !== 'none' && cpDraft ? cpDraft.reactions : (CP && CP.setup && CP.setup.reactions) || {}; const av = window.CompanionAvatar.mount(el, { onPortraitTap: () => cpFullOpen(), onTouch: (zone, mine) => { if (mine && mine.send && CP && CP.setup && $('cpChat').style.display !== 'none') api('/api/companion/say', { text: mine.send, mode: cpMode }).then(() => cpPoll()); } }); if (view) av.view(view); ok(av); }; if (window.CompanionAvatar) return go(); const sc = document.createElement('script'); sc.src = '/companion-avatar.js?v=2'; sc.onload = go; document.head.appendChild(sc); }); }
+function cpLoadAvatar(look, el, view) { return new Promise(ok => { window.COMPANION_LOOK = look || {}; const go = () => { window.COMPANION_REACT = $('cpSetup').style.display !== 'none' && cpDraft ? cpDraft.reactions : (CP && CP.setup && CP.setup.reactions) || {}; const av = window.CompanionAvatar.mount(el, { onPortraitTap: () => cpFullOpen(), wardrobe: true, onWardrobe: () => cpTray(), onTouch: (zone, mine) => { if (mine && mine.send && CP && CP.setup && $('cpChat').style.display !== 'none') api('/api/companion/say', { text: mine.send, mode: cpMode }).then(() => cpPoll()); } }); if (view) av.view(view); ok(av); }; if (window.CompanionAvatar) return go(); const sc = document.createElement('script'); sc.src = '/companion-avatar.js?v=2'; sc.onload = go; document.head.appendChild(sc); }); }
 /* the look editor: every change redraws the preview; Save keeps it */
 async function cpSetupView(editing) {
-  cpFullClose(); $('cpChat').style.display = 'none'; $('cpSetup').style.display = ''; $('cpCancel').style.display = editing ? '' : 'none'; $('cpStage').textContent = ''; cpAv = null;
+  cpFullClose(); window.COMPANION_WORN = {}; $('cpChat').style.display = 'none'; $('cpSetup').style.display = ''; $('cpCancel').style.display = editing ? '' : 'none'; $('cpStage').textContent = ''; cpAv = null;
   const S = (CP && CP.setup) || {};
   cpDraft = { name: S.name || '', about: S.about || '', voice: S.voice || 'af_heart', speak: !!S.speak, imageReader: S.imageReader || 'pc', reactions: JSON.parse(JSON.stringify(S.reactions || {})), look: Object.assign({ hairStyle: 'long', topStyle: 'hoodie', bottomStyle: 'jeans', shoeStyle: 'boots', glasses: false, shoulders: 0.5, bust: 0.5, waist: 0.5, hips: 0.5, thighs: 0.5, arms: 0.5, legs: 0.5, bounce: 0.5 }, Object.fromEntries(CP_COLORS.map(([k, , d]) => [k, d])), S.look || {}) };
   $('cpSetupTitle').textContent = editing ? 'Edit your companion' : 'Set up your companion';
@@ -363,11 +364,23 @@ async function cpChatView() {
 /* tap her portrait: the same drawing moves to a full screen view and shows all of her */
 function cpFullOpen() {
   if (!cpAv) return; $('cpFull').style.display = 'flex'; const st = $('cpStage');
-  st.style.aspectRatio = '200/' + 480; st.style.width = 'auto'; st.style.height = '100%'; st.style.borderRadius = '0'; st.style.cursor = 'default'; $('cpFullStage').appendChild(st); cpAv.view('full'); cpFullSay();
+  st.style.aspectRatio = '200/' + 480; st.style.width = 'auto'; st.style.height = '100%'; st.style.borderRadius = '0'; st.style.cursor = 'default'; $('cpFullStage').appendChild(st); cpAv.view('full'); cpFullSay(); cpTray();
 }
 function cpFullClose() {
   if ($('cpFull').style.display === 'none') return; $('cpFull').style.display = 'none'; const st = $('cpStage');
   st.style.aspectRatio = '1'; st.style.width = '100%'; st.style.height = ''; st.style.borderRadius = '16px'; st.style.cursor = 'zoom-in'; $('cpStageBox').appendChild(st); if (cpAv) cpAv.view('portrait');
+}
+/* the wardrobe tray: what she has taken off. Tap a piece, or drag it onto her, to put it back on */
+const TRAY = { top: ['\u{1F45A}', 'Top'], bottom: ['\u{1F456}', 'Bottom'], shoes: ['\u{1F45F}', 'Shoes'], glasses: ['\u{1F453}', 'Glasses'] };
+function cpTray() {
+  if (!cpAv || !cpAv.worn) return; const w = cpAv.worn(), look = (CP && CP.setup && CP.setup.look) || {};
+  const off = Object.keys(TRAY).filter(k => !w[k] && (k !== 'glasses' || look.glasses));
+  $('cpTray').innerHTML = off.length ? off.map(k => `<button class="sm" data-w="${k}" style="font-size:22px;touch-action:none">${TRAY[k][0]} <span style="font-size:13px">${TRAY[k][1]}</span></button>`).join('') : `<span class="dim" style="font-size:12px">Drag a piece of her clothing off her; it lands here.</span>`;
+  $('cpTray').querySelectorAll('[data-w]').forEach(b => { let drag = null;
+    b.onpointerdown = e => { drag = { x: e.clientX, y: e.clientY }; try { b.setPointerCapture(e.pointerId); } catch { } };
+    b.onpointermove = e => { if (!drag) return; b.style.transform = `translate(${e.clientX - drag.x}px, ${e.clientY - drag.y}px) scale(1.2)`; };
+    b.onpointerup = e => { if (!drag) return; const moved = Math.hypot(e.clientX - drag.x, e.clientY - drag.y); drag = null; b.style.transform = ''; const r = $('cpStage').getBoundingClientRect(); if (moved < 10 || (e.clientX > r.left && e.clientX < r.right && e.clientY > r.top && e.clientY < r.bottom)) { cpAv.wear(b.dataset.w, true); cpTray(); } };
+  });
 }
 function cpFullSay() { const h = (CP && CP.history) || []; const last = [...h].reverse().find(m => m.who === 'them'); $('cpFullSay').textContent = CP && CP.waiting ? `${CP.setup.name} is thinking...` : last ? last.text : ''; }
 $('cpFullBtn').onclick = cpFullOpen; $('cpFullX').onclick = cpFullClose; $('cpFullEdit').onclick = () => cpSetupView(true);

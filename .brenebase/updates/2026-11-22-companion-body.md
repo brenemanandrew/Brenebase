@@ -36,3 +36,11 @@ title: Companion full body, look editor, pictures, icon row
 
 ## Fixed
 - Deploy crashed (site down, 503): the Dockerfile listed modules by name and think.mjs was missing. It now copies every .mjs file
+
+## Done (wardrobe)
+- Full view: drag her top, bottom, shoes or glasses off her. The piece flies off with a spin and she reacts (a face, a move and a line, picked at random per piece). It lands in a tray under her; tap it or drag it onto her to put it back on, and she reacts to that too
+- Under the outer pieces is a plain sporty tank and shorts that always stays on
+- Not saved: she is fully dressed again when the page reloads or the look editor opens
+
+## Tested (wardrobe)
+- Headless Chromium: dragged top, jeans and shoes off (tray showed all three, reactions and bubbles showed), tapped the top back on; no page errors; node test.mjs 54/54
