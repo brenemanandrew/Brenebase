@@ -3,6 +3,9 @@
 #   irm https://brenebase.fly.dev/pc/install-agent.ps1 | iex
 # Remove: Unregister-ScheduledTask -TaskName "Brenebase agent" -Confirm:$false; Remove-Item -Recurse "$env:USERPROFILE\Brenebase"
 $base = "https://brenebase.fly.dev"
+# stop a running copy first, so the new files are the ones that run (only Brenebase's own node processes)
+Stop-ScheduledTask -TaskName "Brenebase agent" -ErrorAction SilentlyContinue
+Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.CommandLine -match 'hub-worker|brenebase-agent' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 $dir = "$env:USERPROFILE\Brenebase"
 foreach ($d in $dir, "$dir\worker", "$dir\pc") { New-Item -ItemType Directory -Force $d | Out-Null }
 foreach ($f in 'pc/brenebase-agent.mjs', 'worker/hub-worker.mjs', 'worker/blender_ops.py', 'worker/render-brenai.cjs', 'parts.mjs') { Invoke-WebRequest "$base/pc-files/$f" -OutFile (Join-Path $dir ($f -replace '/', '\')) }
