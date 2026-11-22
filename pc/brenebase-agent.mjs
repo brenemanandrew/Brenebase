@@ -125,6 +125,9 @@ http.createServer(async (req, res) => {
   send(200, await act(action).catch(e => ({ ok: false, note: String(e.message || e) })));
 }).listen(PORT, () => console.log(`Brenebase agent on :${PORT} (tailnet only), polling ${HUB}`));
 
+/* the worker starts with the agent (at login), so jobs run without anyone tapping Start. AGENT_AUTOSTART=off turns it off. */
+if (process.env.AGENT_AUTOSTART !== 'off') console.log(startHelper('worker'));
+
 /* ---- way 2: polling Brenebase ---- */
 const H = { authorization: `Bearer ${KEY}`, 'content-type': 'application/json' };
 let beat = 0, refused = false;
