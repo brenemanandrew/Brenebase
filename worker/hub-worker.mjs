@@ -165,6 +165,8 @@ async function doJob(j) { tail = []; await progress(j, 'started on the PC', '', 
       }
       let code = ''; for (const sp of f.scripts) { try { code += '\n' + await (await fetch(new URL(sp, f.url + '/'), { signal: AbortSignal.timeout(3000) })).text(); } catch { } }
       f.calls = [...code.matchAll(/(?:fetch|axios\.\w+|post|get|api)\s*\(([^;]{0,220})/gi)].map(m => m[1].replace(/\s+/g, ' ')).filter(x => /api/i.test(x)).slice(0, 40);
+      /* every call through the page's api(path, body) helper: the path, and the keys of what it sends */
+      f.apiCalls = [...new Set([...code.matchAll(/\bapi\(\s*([`'"])([^`'"]{1,80})\1\s*(?:,\s*(\{[^;]{0,400}))?/g)].map(m => `${m[2]}${m[3] ? ' <- ' + [...new Set([...m[3].matchAll(/([A-Za-z_][\w]*)\s*:/g)].map(k => k[1]))].slice(0, 14).join(', ') : ''}`))].slice(0, 60);
       f.apiStrings = [...new Set([...code.matchAll(/['"`]\/api\/['"`]\s*\+\s*['"`]?([\w\/${}.-]+)|\/api\/([\w\/${}.-]+)/g)].map(m => '/api/' + (m[1] || m[2])))].slice(0, 60);
     }
     const studio = found.filter(f => f.studio);
