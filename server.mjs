@@ -88,7 +88,9 @@ function sectionFrom(text, re) { const m = String(text || '').match(new RegExp(`
 function report(j) {
   const r = j.result || {}, R = { done: [], tested: [], notTested: [], blocked: [], next: [] };
   if (j.status === 'failed' || j.error) {
-    R.blocked.push(String(j.error || 'It failed without a message.').split('\n')[0].slice(0, 300));
+    /* the line that says what went wrong, not the first line of a stack trace */
+    const lines = String(j.error || 'It failed without a message.').split('\n').map(l => l.trim()).filter(Boolean);
+    R.blocked.push((lines.find(l => /(^|\b)(Error|error|failed|not found|cannot|could not|Nothing to)/.test(l) && !/^at /.test(l)) || lines[0]).slice(0, 300));
     const fx = FIXES.find(([re]) => re.test(j.error || '')); R.next.push(fx ? fx[1] : 'Tap Retry. If it fails the same way, send me a screenshot of this card.');
     return R;
   }

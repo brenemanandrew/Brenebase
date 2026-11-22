@@ -35,7 +35,7 @@ if (!TOKEN) { console.log('Set HUB_WORKER_TOKEN first.'); process.exit(1); }
 const PC_SCRIPTS = {
   /* scripts from a repo run from the worker's own copy of its latest main (see toolsTree), with the packages they need */
   'make3d:check': j => ({ repo: 'Brenelandtest', script: 'pipeline/jstest/piece.mjs', args: [j.args.piece || ''] }),
-  'motion:library': j => ({ repo: 'Brenelandtest', script: 'brenai/tools/clipconv.mjs', needs: ['three'], args: [j.args.in || path.join(REPOS, 'clips-in'), j.args.out || path.join(REPOS, 'clips-out')] }),
+  'motion:library': j => { const i = j.args.in || path.join(REPOS, 'clips-in'), o = j.args.out || path.join(REPOS, 'clips-out'); return { repo: 'Brenelandtest', script: 'brenai/tools/clipconv.mjs', needs: ['three'], args: [i, o], dirs: [i, o], inDir: i, inExt: /\.fbx$/i, inLabel: 'Mixamo .fbx animation files' }; },
   'ship:test': j => ['npx', ['serve', path.join(REPOS, j.args.site || 'Brenelandtest/site')]],
 };
 
@@ -230,6 +230,9 @@ async function doJob(j) { await progress(j, 'started on the PC', '', true);
     /* packages the script needs that are not installed: installed into the worker's copy only (never your working copy) */
     const missing = (spec.needs || []).filter(pkg => { for (let d = path.dirname(script); d.startsWith(t.dir); d = path.dirname(d)) { if (fs.existsSync(path.join(d, 'node_modules', pkg))) return false; if (d === t.dir) break; } return true; });
     if (missing.length) { await progress(j, `installing ${missing.join(', ')} for the tool`, '', true); const npm = path.join(path.dirname(process.execPath), process.platform === 'win32' ? 'npm.cmd' : 'npm'); const ni = await run(fs.existsSync(npm) ? npm : 'npm', ['install', '--no-save', '--no-package-lock', ...missing], t.dir, null, x => progress(j, 'installing', x)); if (ni.code) return { ok: false, error: `Could not install ${missing.join(', ')}: ${(ni.err || ni.out).slice(-300)}` }; }
+    /* folders a tool reads from: made if missing; nothing in them means nothing to do (said plainly, not a crash) */
+    for (const d of spec.dirs || []) fs.mkdirSync(d, { recursive: true });
+    if (spec.inDir && spec.inExt && !fs.readdirSync(spec.inDir).some(f => spec.inExt.test(f))) return { ok: false, error: `Nothing to convert: put your ${spec.inLabel || 'files'} in ${spec.inDir}, then tap Retry.` };
     await progress(j, `running ${spec.script}`, '', true);
     const r = await run(process.execPath, [script, ...spec.args], path.dirname(script), null, x => progress(j, 'running', x));
     return { ok: r.code === 0, text: r.out || r.err, error: r.code ? (r.err || r.out).slice(-1500) : undefined };

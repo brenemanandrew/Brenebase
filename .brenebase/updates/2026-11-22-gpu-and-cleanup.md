@@ -29,3 +29,4 @@ title: Pictures and the companion share the graphics card; cleanup pass
 
 ## Fixed
 - "Cannot find module F:\Projects\Brenelandtest\brenai\tools\clipconv.mjs": PC scripts ran from Andrew's own working copy, which can be behind or on another branch, and the clip converter needs the three package that nothing installed. PC scripts now run from the worker's own copy of the repo's latest main (<repo>-wt\_tools, detached, refreshed each run), and missing packages the script needs are installed there with --no-save. His working copy is never touched. Tested: a fresh copy on another branch stayed on it; the tools copy was made, three installed, the converter ran
+- Clip converter: makes its in and out folders (REPOS\clips-in, clips-out) if missing; with no .fbx files it says "Nothing to convert: put your Mixamo .fbx animation files in ..." instead of crashing. Job reports show the line that says what went wrong, not the first line of a stack trace. Tested in the sandbox
