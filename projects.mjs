@@ -120,7 +120,7 @@ const words = s => new Set(lc(s).trim().split(' ').filter(w => w.length > 3 && !
 /* which project a thought is about */
 export function match(text) {
   const t = lc(text);
-  const scored = cards().filter(c => !c.archived).map(c => ({ c, s: (c.keywords || []).reduce((n, k) => n + (t.includes(' ' + k.toLowerCase() + ' ') || t.includes(' ' + k.toLowerCase()) ? (k.includes(' ') ? 2 : 1) : 0), 0) + (t.includes(' ' + c.id + ' ') ? 2 : 0) })).filter(x => x.s > 0).sort((a, b) => b.s - a.s);
+  const scored = cards().filter(c => !c.archived).map(c => ({ c, s: (c.keywords || []).reduce((n, k) => n + (t.includes(' ' + k.toLowerCase() + ' ') ? (k.includes(' ') ? 2 : 1) : 0), 0) + (t.includes(' ' + c.id + ' ') ? 2 : 0) })).filter(x => x.s > 0).sort((a, b) => b.s - a.s);
   return scored[0] ? scored[0].c : null;
 }
 

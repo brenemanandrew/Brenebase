@@ -32,6 +32,7 @@ import * as PA from './pcagent.mjs';
 import * as U from './updates.mjs';
 import * as TG from './tags.mjs';
 import { vet } from './vet.mjs';
+import { think } from './think.mjs';
 import * as CP from './companion.mjs';
 import * as TH from './threads.mjs';
 
@@ -141,9 +142,12 @@ function dress(j) {
     const kids = j.children.map(id => L.get(id)).filter(Boolean);
     o.status = kids.some(k => k.status === 'failed') && kids.every(k => ['done', 'failed', 'cancelled'].includes(k.status)) ? 'failed' : kids.every(k => ['done', 'cancelled'].includes(k.status)) ? 'done' : kids.some(k => ['waiting', 'waiting-answer', 'held'].includes(k.status)) && !kids.some(k => ['queued', 'running', 'ready'].includes(k.status)) ? 'waiting' : 'running';
     o.report = { done: kids.map(k => `${k.label}: ${k.status}${k.status === 'done' && k.result && k.result.images ? ` (${k.result.images.length} picture(s))` : ''}`), tested: [], notTested: [], blocked: kids.filter(k => k.status === 'failed').map(k => `${k.label}: ${String(k.error || '').split('\n')[0].slice(0, 200)}`), next: [o.status === 'done' ? 'Open the parts below, or the results window, to see each result.' : o.status === 'failed' ? 'Open the failed part and tap Retry.' : 'Still working: the parts update by themselves.'] };
+    const pend = j.pending || [];
+    if (pend.length && o.status === 'done') o.status = 'running';
+    if (pend.length) o.report.done.push(...pend.map(w => `${resolve(w.pt.tool, w.pt.mode).label}: waiting for part ${w.needs.map(n => n + 1).join(' and ')}`));
     o.partJobs = kids.map(dress);
   }
-  if (j.children) { const kids = j.children.map(id => L.get(id)).filter(Boolean); o.parts = { done: kids.filter(k => k.status === 'done').length, failed: kids.filter(k => k.status === 'failed').length, waiting: kids.filter(k => ['waiting', 'held', 'waiting-answer'].includes(k.status)).length, running: kids.filter(k => ['queued', 'running', 'ready'].includes(k.status)).length, total: kids.length }; }
+  if (j.children) { const kids = j.children.map(id => L.get(id)).filter(Boolean); o.parts = { done: kids.filter(k => k.status === 'done').length, failed: kids.filter(k => k.status === 'failed').length, waiting: kids.filter(k => ['waiting', 'held', 'waiting-answer'].includes(k.status)).length + (j.pending || []).length, running: kids.filter(k => ['queued', 'running', 'ready'].includes(k.status)).length, total: kids.length + (j.pending || []).length }; }
   return o;
 }
 /* Only what a person would read out loud goes to the voice: no code, links, paths, tables, JSON, *actions* or
@@ -246,7 +250,31 @@ function startSplit({ text, plan, repo, label, thread }) {
 function fillSlot(parent, id, fill) { const sl = parent.slots.find(x => x.id === id); if (sl) sl.fill = fill; }
 
 /* called after any change to a job that belongs to a split */
+/* ask the PC model one thing and wait for the answer (through the worker; quiet, so it is not shown as a job) */
+function askPc(system, text, waitMs = 90000) {
+  if (!workerOnline() || !worker.can.includes('pc-model')) return Promise.resolve(null);
+  const j = L.add({ tool: 'companion', mode: 'chat', backend: 'pc-model', runsOn: 'pc', label: 'Thinking: planning the parts', system, text, maxTokens: 1500, status: 'queued', quiet: true });
+  return new Promise(ok => { const t0 = Date.now(); const iv = setInterval(() => { const x = L.get(j.id); if (x && ['done', 'failed'].includes(x.status)) { clearInterval(iv); ok(x.status === 'done' ? (x.result && x.result.text) || '' : null); } else if (Date.now() - t0 > waitMs) { clearInterval(iv); L.update(j.id, { status: 'cancelled' }, 'took too long'); ok(null); } }, 1000); });
+}
+
+/* a parts card: when a part finishes, start the parts that were waiting for it, with its result handed on */
+async function releaseParts(par) {
+  for (const w of [...(par.pending || [])]) {
+    const deps = w.needs.map(n => L.get(par.byIdx[n])).filter(Boolean);
+    if (deps.length < w.needs.length) continue;
+    if (deps.some(d => ['failed', 'cancelled'].includes(d.status))) { par.pending = par.pending.filter(x => x !== w); const f = L.add({ parent: par.id, tool: w.pt.tool, mode: w.pt.mode, runsOn: 'cloud', backend: 'none', label: resolve(w.pt.tool, w.pt.mode).label, text: w.pt.text, status: 'failed', error: 'An earlier part it needed failed. Retry that part, then send this one again.' }); par.byIdx[w.idx] = f.id; par.children.push(f.id); continue; }
+    if (!deps.every(d => d.status === 'done')) continue;
+    par.pending = par.pending.filter(x => x !== w);
+    const handed = deps.map(d => `${d.label}:\n${String((d.result && (d.result.text || (d.result.images ? d.result.images.length + ' picture(s): ' + d.result.images.join(', ') : ''))) || '').slice(0, 6000)}`).join('\n\n');
+    let j = makeJob({ text: `${w.pt.text}\n\nUse this result from the earlier part:\n${handed}`, tool: w.pt.tool, mode: w.pt.mode, area: par.area, autonomy: par.autonomy, project: par.project || undefined, repo: par.repo, thread: par.thread });
+    L.update(j.id, { parent: par.id }); par.byIdx[w.idx] = j.id; par.children.push(j.id);
+    L.update(par.id, { pending: par.pending, byIdx: par.byIdx, children: par.children }, `part ${w.idx + 1} started with what it was waiting for`);
+    if (j.status === 'ready') start(j).catch(() => { });
+  }
+}
+
 function afterChange(j) {
+  if (j && j.parent) { const par = L.get(j.parent); if (par && par.backend === 'parts') { if (['done', 'failed', 'cancelled'].includes(j.status)) releaseParts(par).catch(() => { }); return j; } }
   if (!j || !j.parent) return j;
   const par = L.get(j.parent); if (!par) return j;
   if (j.part === 'story' && j.status === 'done' && j.result && j.result.text) {
@@ -394,6 +422,12 @@ http.createServer(async (req, res) => {
     if (p === '/api/settings' && req.method === 'GET') return send(res, 200, SETTINGS);
     if (p === '/api/settings' && req.method === 'POST') { const b = await body(req); if (['complex', 'all', 'off'].includes(b.copilotReview)) SETTINGS.copilotReview = b.copilotReview; if (b.voice && /^[a-z]{2}_[a-z]+$/.test(b.voice)) SETTINGS.voice = b.voice; if (b.speed) SETTINGS.speed = Math.max(0.6, Math.min(1.6, +b.speed || 1)); saveSettings(); return send(res, 200, SETTINGS); }
     if (p === '/api/catalogue') return send(res, 200, { tools: TOOLS, areas: Object.fromEntries(Object.entries(AREAS).map(([k, v]) => [k, v.label])), autonomy: AUTONOMY, worker: { online: workerOnline(), can: worker.can }, claude: !!claude, meshy: !!process.env.MESHY_API_KEY });
+    if (p === '/api/think' && req.method === 'POST') {
+      const b = await body(req); const tg = TG.read(b.text || ''); const th = b.thread && TH.get(b.thread);
+      const pj = (tg.project && PJ.card(tg.project)) || (th && th.project && PJ.card(th.project)) || PJ.match(b.text || '');
+      const plan = await think(tg.rest || b.text, { claude, askPc, project: pj, tags: tg });
+      return send(res, 200, { ...plan, tags: tg, project: pj ? { id: pj.id, name: pj.name, private: !!pj.private } : null, hints: PJ.hints(pj, tg.rest || b.text) });
+    }
     if (p === '/api/route' && req.method === 'POST') {
       const b = await body(req); const v = vet(b.text); const tg = v.tags;
       const r = await route(tg.rest || b.text, { claude });
@@ -408,8 +442,14 @@ http.createServer(async (req, res) => {
       /* one job per part; every part goes through makeJob's checks on its own */
       const b = await body(req); const parent = L.add({ tool: 'parts', mode: 'parts', backend: 'parts', runsOn: 'cloud', label: `Parts: ${String(b.text || '').slice(0, 50)}`, text: b.text, project: b.project || null, status: 'running', children: [] });
       const kids = [];
-      for (const pt of b.parts || []) { let j = makeJob({ text: pt.text, tool: pt.tool, mode: pt.mode, area: b.area, autonomy: b.autonomy, project: b.project, repo: b.repo, thread: b.thread }); L.update(j.id, { parent: parent.id }); if (j.status === 'ready') j = await start(j); kids.push(j.id); }
-      return send(res, 200, L.update(parent.id, { children: kids, status: 'done' }, `${kids.length} parts sent to their tools`));
+      const byIdx = {}, pending = [];
+      for (const [idx, pt] of (b.parts || []).entries()) {
+        const needs = (pt.needs || []).filter(n => Number.isInteger(n) && n < idx);
+        if (needs.length) { pending.push({ idx, pt, needs }); continue; }
+        let j = makeJob({ text: pt.text, tool: pt.tool, mode: pt.mode, area: b.area, autonomy: b.autonomy, project: b.project, repo: b.repo, thread: b.thread }); L.update(j.id, { parent: parent.id }); byIdx[idx] = j.id; kids.push(j.id); if (j.status === 'ready') start(j).catch(() => { });
+      }
+      const par = L.update(parent.id, { children: kids, byIdx, pending, area: b.area, autonomy: b.autonomy, repo: b.repo, thread: b.thread, status: 'done' }, `${kids.length} part(s) sent to their tools${pending.length ? `, ${pending.length} waiting for an earlier part` : ''}`);
+      return send(res, 200, dress(par));
     }
     if (p === '/api/tags' && req.method === 'GET') return send(res, 200, { tags: TG.tags() });
     if (p === '/api/tags' && req.method === 'POST') { const b = await body(req); return send(res, 200, { tags: TG.saveTags(b.tags) }); }

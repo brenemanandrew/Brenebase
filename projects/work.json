@@ -22,13 +22,14 @@
   "idea board",
   "roster",
   "cross training",
-  "draw",
   "sign-ups",
   "shift card",
   "sap",
   "cubiscan",
   "training app",
-  "standard work"
+  "standard work",
+  "overtime draw",
+  "the draw"
  ],
  "what": "Andrew's tools for the Hubbell Arden distribution center: Arden Hub (one PIN-gated app for the floor: Shift, Pick, Pack, Stage, Ship, People, Improve, System), the Weekend Overtime kiosk (ardenot), Staging Lane Health and Arden Pack (run as modules inside the hub), the CI idea board, and the dashboard PC kit that feeds them from SAP exports.",
  "where": [

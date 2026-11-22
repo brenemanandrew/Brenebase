@@ -26,6 +26,10 @@ select{background:var(--card);color:var(--text);border:1px solid var(--line);bor
 pre{white-space:pre-wrap;word-break:break-word;background:#0f1116;border-radius:8px;padding:10px;font-size:13px;max-height:340px;overflow:auto}
 h3{margin:18px 0 6px}.mode{margin:4px 0 4px 10px}
 #login{display:none}
+#now{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px}#now .chip{border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-size:13px;cursor:pointer;color:var(--dim)}#now .chip.bad{color:var(--bad);border-color:var(--bad)}#now .chip.run{color:var(--acc);border-color:var(--acc)}
+.bigrow{display:flex;gap:8px;margin:10px 0}.bigrow button{flex:1;padding:14px;font-size:16px}
+.ppart{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:8px 0}.ppart textarea{min-height:60px;margin-top:6px;font-size:14px}.ppart select{max-width:100%}
+.pnum{display:inline-block;width:22px;height:22px;border-radius:50%;background:var(--acc);color:#081020;text-align:center;font-weight:700;font-size:13px;line-height:22px}
 </style></head><body>
 <header><b>Brenebase</b><span class="dim" id="lights" style="cursor:pointer" title="Open the PC tab"><span id="adot" class="dot"></span> PC <span id="mdot" class="dot"></span> Model <span id="wdot" class="dot"></span> Worker</span>
 <nav><button data-tab="send" class="on">Send</button><button data-tab="jobs">Jobs</button><button data-tab="companion" id="cpTab">Companion</button><button data-tab="projects">Projects</button><button data-tab="pc">PC</button><button data-tab="tools">Tools</button></nav></header>
@@ -35,9 +39,14 @@ h3{margin:18px 0 6px}.mode{margin:4px 0 4px 10px}
 <div id="login" class="card"><p>Password</p><div class="row"><input id="pw" type="password" style="flex:1;padding:9px;border-radius:8px;border:1px solid var(--line);background:#0f1116;color:var(--text)"><button class="go" id="loginBtn">Go</button></div><div id="loginMsg" class="st-failed"></div></div>
 
 <section id="send">
-  <textarea id="thought" placeholder="Dump the thought here. The hub picks where it goes."></textarea>
+  <div id="now"></div>
+  <textarea id="thought" placeholder="Say or type what you want. Brenebase works out the parts and where each goes."></textarea>
   <div id="heard" class="dim" style="min-height:1.2em;font-style:italic"></div>
-  <div class="row"><button class="go" id="micBtn" title="Talk to text" style="background:var(--card);color:var(--text);border:1px solid var(--line)">&#127908; Talk</button><button class="go" id="routeBtn">Route it</button><button class="go" id="splitBtn" style="background:#b48cff">Split it</button><span class="dim">Wrap private parts in [[local]] ... [[/local]]</span></div>
+  <div class="bigrow"><button class="go" id="micBtn" title="Talk to text" style="background:var(--card);color:var(--text);border:1px solid var(--line)">&#127908; Talk</button><button class="go" id="goBtn">Go &#9656;</button></div>
+  <div id="planBox"></div>
+  <details id="moreOpts"><summary class="dim">More options: pick the tool yourself, or a game split</summary>
+  <div class="row"><button class="sm" id="routeBtn">Pick the tool</button><button class="sm" id="splitBtn">Game split (code, art, story)</button></div>
+  <div class="dim">Wrap private parts in [[local]] ... [[/local]]. Start with a tag like "SUI:" or "Hubbell:" to point it at a project.</div></details>
   <div id="pick" class="card" style="display:none">
     <div id="why" class="dim"></div>
     <div class="row"><select id="tool"></select><select id="mode"></select><select id="area"></select><select id="proj"></select></div>
@@ -136,6 +145,54 @@ function showDoes() {
 $('tool').onchange = () => fillModes(); $('mode').onchange = showDoes;
 
 let routed = null;
+/* ---- Go: Brenebase thinks about the whole request, shows the plan, Run sends it ---- */
+let PLAN = null;
+const toolOpts = sel => CAT ? CAT.tools.map(t => Object.entries(t.modes).map(([k, m]) => `<option value="${t.id}/${k}"${sel === t.id + '/' + k ? ' selected' : ''}>${esc(t.name)}: ${esc(m.label)}</option>`).join('')).join('') : '';
+function drawPlan() {
+  if (!PLAN) { $('planBox').innerHTML = ''; return; }
+  const who = { claude: 'Planned by Claude', 'pc-model': 'Planned by your PC model', rules: 'Split by the rules (no model was free)' }[PLAN.by] || '';
+  $('planBox').innerHTML = `<div class="card" style="border-color:var(--acc)">
+    ${PLAN.summary ? `<b>${esc(PLAN.summary)}</b>` : `<b>${PLAN.parts.length === 1 ? 'One job' : PLAN.parts.length + ' parts'}</b>`}
+    <div class="dim">${esc(who)}${PLAN.local ? ' &middot; private, kept on your PC' : ''}${PLAN.project ? ' &middot; ' + esc(PLAN.project.name) : ''}</div>
+    ${(PLAN.notes || []).map(n => `<div class="dim">${esc(n)}</div>`).join('')}
+    ${PLAN.question ? `<p class="st-waiting">${esc(PLAN.question)}</p>` : ''}
+    ${PLAN.parts.map((p, i) => `<div class="ppart"><div class="row" style="margin:0;flex-wrap:nowrap"><span class="pnum">${i + 1}</span><select data-i="${i}" class="ptool" style="flex:1;min-width:0">${toolOpts(p.tool + '/' + p.mode)}</select><button class="sm" data-x="${i}" title="Remove this part">&times;</button></div>
+      ${p.needs && p.needs.length ? `<div class="dim" style="margin-top:4px">Waits for part ${p.needs.map(n => n + 1).join(' and ')}, then gets its result</div>` : ''}
+      ${p.why ? `<div class="dim">${esc(p.why)}</div>` : ''}
+      <textarea data-t="${i}" class="ptext">${esc(p.text)}</textarea></div>`).join('')}
+    <div class="row"><button class="go" id="runPlan">Run${PLAN.parts.length > 1 ? ' all ' + PLAN.parts.length : ''}</button><button class="sm" id="addPart">+ Part</button><button class="sm" id="planX">Clear</button></div>
+    ${(PLAN.hints || []).length ? `<details><summary class="dim">Already known about this (${PLAN.hints.length})</summary>${PLAN.hints.map(h => `<div class="mode"><span class="tag">${esc(h.kind)}</span> ${esc(h.text)}</div>`).join('')}</details>` : ''}</div>`;
+  $('planBox').querySelectorAll('.ptool').forEach(x => x.onchange = () => { const [t, m] = x.value.split('/'); Object.assign(PLAN.parts[+x.dataset.i], { tool: t, mode: m }); });
+  $('planBox').querySelectorAll('.ptext').forEach(x => x.oninput = () => { PLAN.parts[+x.dataset.t].text = x.value; });
+  $('planBox').querySelectorAll('[data-x]').forEach(x => x.onclick = () => { const i = +x.dataset.x; PLAN.parts.splice(i, 1); PLAN.parts.forEach(p => { p.needs = (p.needs || []).filter(n => n !== i).map(n => n > i ? n - 1 : n); }); if (!PLAN.parts.length) PLAN = null; drawPlan(); });
+  $('addPart').onclick = () => { PLAN.parts.push({ tool: 'planner', mode: Object.keys(CAT.tools.find(t => t.id === 'planner').modes)[0], text: '', needs: [] }); drawPlan(); };
+  $('planX').onclick = () => { PLAN = null; drawPlan(); };
+  $('runPlan').onclick = async () => {
+    $('runPlan').disabled = true; $('runPlan').textContent = 'Sending...';
+    const parts = PLAN.parts.filter(p => p.text.trim());
+    const base = { text: $('thought').value || PLAN.summary, project: PLAN.project ? PLAN.project.id : undefined, area: undefined, autonomy: 'draft', repo: PLAN.tags && PLAN.tags.repo, thread: TAB || undefined };
+    const j = parts.length === 1 ? await api('/api/jobs', { ...base, text: parts[0].text, tool: parts[0].tool, mode: parts[0].mode }) : await api('/api/jobs/parts', { ...base, parts });
+    $('last').innerHTML = jobCard(j); PLAN = null; drawPlan(); $('thought').value = ''; nowStrip();
+  };
+}
+$('goBtn').onclick = async () => {
+  const text = $('thought').value.trim(); if (!text) return;
+  $('goBtn').disabled = true; $('goBtn').textContent = 'Thinking...'; $('pick').style.display = 'none'; $('splitBox').style.display = 'none';
+  try { PLAN = await api('/api/think', { text, thread: TAB || undefined }); if (PLAN.error) { $('planBox').innerHTML = `<p class="st-failed">${esc(PLAN.error)}</p>`; PLAN = null; } else drawPlan(); }
+  finally { $('goBtn').disabled = false; $('goBtn').innerHTML = 'Go &#9656;'; }
+};
+/* what is going on, at the top of Send: tap to jump */
+async function nowStrip() {
+  try {
+    const d = await api('/api/jobs'); const js = d.jobs || [];
+    const run = js.filter(j => ['queued', 'running', 'waiting'].includes(j.status)).length, bad = js.filter(j => j.status === 'failed' && Date.now() - j.at < 86400000).length;
+    $('now').innerHTML = (run ? `<span class="chip run" data-go="jobs">${run} in progress</span>` : '') + (bad ? `<span class="chip bad" data-go="jobs">${bad} need a look</span>` : '') + (d.worker && !d.worker.online ? `<span class="chip bad" data-go="pc">PC worker offline</span>` : '');
+    $('now').querySelectorAll('[data-go]').forEach(c => c.onclick = () => document.querySelector(`nav button[data-tab=${c.dataset.go}]`).click());
+  } catch { }
+}
+setInterval(() => { if ($('send').style.display !== 'none') nowStrip(); }, 10000); setTimeout(nowStrip, 1200);
+/* Enter-and-Go: Ctrl+Enter in the box */
+$('thought').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) $('goBtn').click(); });
 $('routeBtn').onclick = async () => {
   const text = $('thought').value.trim(); if (!text) return;
   $('routeBtn').disabled = true;

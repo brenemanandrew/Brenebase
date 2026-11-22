@@ -38,6 +38,8 @@ for (const [t, want] of CASES) {
 const s = split('use the persona [[local]]she is 22 and goth[[/local]] with token: abc123456 and sk-ant-api03-xxxxxxxxxxxxxxxx');
 console.log('\nsplit out:', s.out, '\nsecrets removed:', s.secrets, '\nrejoined:', rejoin('code uses [[KEPT-LOCAL-1: x]] here', s.held));
 import * as P from './parts.mjs';
+import * as TG2 from './tags.mjs';
+import { think, isPrivate } from './think.mjs';
 const sp = P.plan('Make me a game where you run a tavern, guests come in and order drinks, you serve them and get paid, and use cel shaded visuals like my Breneland trees. The barkeep is named Grum and he is grumpy but kind.');
 const brief = P.codeBrief(sp, { id: 'x', repo: 'me/game' });
 const SPLIT = [
@@ -60,6 +62,9 @@ SPLIT.push(
   ['"lighthouse at sunset, 2 images realistic" is one picture job, no Planner part', (v => v.parts.length === 1 && v.parts[0].tool === 'image')(vet('lighthouse at sunset, 2 images realistic'))],
   ['the Split screen puts a picture request on the art side', P.plan('lighthouse at sunset, 2 images realistic').mechanics.length === 0],
   ['a story and pictures still go to two places', vet('write a story about a lighthouse keeper and draw 2 pictures of the lighthouse').parts.length === 2],
+  ['"draw 2 pictures" is not the overtime draw (no work project)', !PJx.match('write a story about a lighthouse keeper and draw 2 pictures')],
+  ['a Hubbell request is private, so only the PC model plans it', isPrivate('Hubbell: kaizen ideas', { tags: TG2.read('Hubbell: kaizen ideas') })],
+  ['with no model free, Go still splits by the rules', (await think('write a story about a lighthouse keeper and draw 2 pictures of the lighthouse', {})).parts.length === 2],
   ['an add-on like "2 images" stays with its request', vet('a lighthouse at sunset, 2 images').parts.length === 1 && vet('a lighthouse at sunset, 2 images').parts[0].tool === 'image'],
   ['tag sets the project (Hubbell -> work)', v1.tags.project === 'work'],
   ['whole statement vetted into 3 parts', v1.suggest === 'parts' && v1.parts.map(p => p.tool).join() === 'coder,expert,companion'],
