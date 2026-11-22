@@ -69,7 +69,7 @@ function wav16(f32, rate) {
 }
 /* project notes on this PC: only files inside these folders can be read (Google Drive for desktop, project folders) */
 const READ_ROOTS = (process.env.READ_ROOTS || 'G:\\My Drive;F:\\Projects;C:\\Program Files (x86)\\World of Warcraft\\_retail_\\Interface\\AddOns').split(';').map(r => path.resolve(r.trim())).filter(Boolean);
-can.push('read', 'readdir', 'probe', 'studio');
+can.push('read', 'readdir', 'probe', 'studio', 'studio-image');
 console.log(`hub worker: ${HUB}\ncan do: ${can.join(', ')}`);
 
 const run = (cmd, args, cwd, input, onOut) => new Promise(ok => {
@@ -187,6 +187,30 @@ async function doJob(j) { tail = []; await progress(j, 'started on the PC', '', 
       catch (e) { out.push({ path: c.path, error: String(e.message || e) }); }
     }
     return { ok: true, text: JSON.stringify(out, null, 1), result: { studio: out } };
+  }
+  /* a picture made by Brenai Studio's own models: queue it there, follow its job list, fetch the files */
+  if (j.backend === 'studio-image') {
+    const base = (process.env.STUDIO_URL || 'http://127.0.0.1:7860').replace(/\/$/, ''), H2 = { 'x-studio': '1', 'content-type': 'application/json' };
+    const call = async (pth, body) => { const r = await fetch(base + '/api/' + pth, { method: body ? 'POST' : 'GET', headers: H2, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(20000) }); const t = await r.text(); let d; try { d = JSON.parse(t); } catch { d = t; } if (!r.ok) throw new Error(`Studio ${pth} ${r.status}: ${String(t).slice(0, 200)}`); return d; };
+    let before = []; try { before = (await call('jobs')).map(x => String(x.id)); } catch (e) { return { ok: false, error: `Brenai Studio is not answering at ${base}. Open it, then Retry. (${e.message})` }; }
+    await progress(j, `queuing in Brenai Studio (${j.studioBody.engine || j.studioBody.model || 'image'})`, '', true);
+    const res = await call('image', j.studioBody);
+    let id = res && (res.id || res.jobId || (res.job && res.job.id)); id = id != null ? String(id) : null;
+    const t0 = Date.now();
+    while (Date.now() - t0 < (j.maxMinutes || 20) * 60000) {
+      await new Promise(r => setTimeout(r, 3000));
+      let list = []; try { list = await call('jobs'); } catch { continue; }
+      const job = list.find(x => id ? String(x.id) === id : !before.includes(String(x.id)) && x.kind === 'image');
+      if (!job) continue; id = String(job.id);
+      await progress(j, `Brenai Studio: ${job.note || job.status}`, (job.log || []).slice(-1)[0] || '');
+      if (job.status === 'failed' || job.status === 'error') return { ok: false, error: `Brenai Studio could not make it: ${job.note || job.error || 'no reason given'}` };
+      if (job.status === 'done') {
+        const images = [];
+        for (const f of (job.files || []).slice(0, 8)) { try { const b = Buffer.from(await (await fetch(base + f, { signal: AbortSignal.timeout(60000) })).arrayBuffer()); images.push({ name: path.basename(f), data: b.toString('base64') }); } catch { } }
+        return { ok: images.length > 0, text: `${images.length} picture(s) from Brenai Studio (${job.note || 'done'}). Saved on the PC in Studio's outputs folder too.`, result: { images64: images }, error: images.length ? undefined : 'Studio finished but the files could not be fetched' };
+      }
+    }
+    return { ok: false, error: 'Brenai Studio took more than 20 minutes; the picture may still finish in Studio itself.' };
   }
   if (j.backend === 'merge') return merge(j);
   if (j.backend === 'readdir') {

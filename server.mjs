@@ -157,15 +157,32 @@ export function speakable(text, cap = 1500) {
 function makeJob({ text, tool, mode, area, autonomy = 'draft', args = {}, repo, target, project, thread }) {
   const th = thread && TH.get(thread); if (th && th.project && project === undefined) project = th.project;
   if (tool === 'image' && mode === 'model' && !args.specs) args = { ...args, specs: wizraSpecs(text) };
+  /* Brenai Studio picture: what its page sends as api('image', { ...imageParams(), prompt }). Field names are confirmed
+     from the Look inside Brenai Studio output; STUDIO_FIELDS can override them without a PC update. */
+  let studioBody;
+  if (tool === 'image' && ['realistic', 'anime', 'h3'].includes(mode)) {
+    const engine = { realistic: 'zimage', anime: 'illustrious', h3: 'h3' }[mode];
+    const n = Math.max(1, Math.min(8, +((String(text).match(/\b(\d{1,2})\s*(images|pictures|pics|renders|versions)\b/i) || [])[1]) || 1));
+    const ar = (String(text).match(/\b(16:9|9:16|1:1|4:3|3:4|3:2|2:3|21:9)\b/) || [])[1] || (/portrait|full body|t-?pose|standing/i.test(text) ? '2:3' : /landscape|wide|scene/i.test(text) ? '16:9' : '1:1');
+    const F = { engine: 'engine', count: 'count', aspect: 'aspect_ratio', ...(process.env.STUDIO_FIELDS ? JSON.parse(process.env.STUDIO_FIELDS) : {}) };
+    studioBody = { [F.engine]: engine, model: engine, prompt: String(text).replace(/^\s*[\w\s]{1,30}:\s*/, '').slice(0, 2000), [F.count]: n, [F.aspect]: ar };
+  }
   let r = resolve(tool, mode); if (!r) throw new Error('unknown tool');
   if (process.env.HUB_WORK_LOCAL === '1' && area === 'work' && r.backend === 'claude') r = { ...r, backend: 'pc-model', runsOn: 'pc' };
   const pj = project === '' ? null : PJ.card(project) || PJ.match(text);
   /* a private (work) project's context never goes to the cloud: those jobs move to the PC model */
   if (pj && pj.private && r.backend === 'claude') r = { ...r, backend: 'pc-model', runsOn: 'pc' };
-  const job = { text, area: area || (pj && pj.area), autonomy, args, repo: repo || (pj && pj.repo && pj.repo.includes('/') && !pj.repo.includes(' ') ? pj.repo : undefined), target, project: pj ? pj.id : null, thread: th ? th.id : undefined, ...r };
-  const safe = ['brief', 'claude', 'link', 'copilot'].includes(r.backend) || (r.backend === 'pc-model') || (tool === 'image' && r.mode === 'model');
+  const job = { text, area: area || (pj && pj.area), autonomy, args, repo: repo || (pj && pj.repo && pj.repo.includes('/') && !pj.repo.includes(' ') ? pj.repo : undefined), target, project: pj ? pj.id : null, thread: th ? th.id : undefined, ...(studioBody ? { studioBody } : {}), ...r };
+  const safe = ['brief', 'claude', 'link', 'copilot'].includes(r.backend) || (r.backend === 'pc-model') || (tool === 'image' && ['model', 'realistic', 'anime', 'h3'].includes(r.mode));
   const mustAsk = r.gate === 'always' || SPENDS.includes(r.backend) || autonomy === 'ask' || (autonomy === 'draft' && !safe);
-  return L.add({ ...job, status: mustAsk ? 'waiting' : 'ready' });
+  const made = L.add({ ...job, status: mustAsk ? 'waiting' : 'ready' });
+  if (studioBody && ['realistic', 'anime'].includes(r.mode) && /realistic|photo/i.test(text) && /anime|manga|cel|toon/i.test(text) && !args.noTwin) {
+    const other = r.mode === 'realistic' ? 'anime' : 'realistic';
+    const twin = makeJob({ text, tool, mode: other, area, autonomy, args: { ...args, noTwin: true }, repo, target, project, thread });
+    L.update(made.id, { twin: twin.id }, `the ${other} version is job ${twin.id}`);
+    if (twin.status === 'ready') start(twin);
+  }
+  return made;
 }
 
 async function start(j) {
@@ -326,7 +343,7 @@ http.createServer(async (req, res) => {
     if (p === '/api/studio/probe' && req.method === 'POST') { const j = L.add({ tool: 'image', mode: 'studio', backend: 'probe', runsOn: 'pc', label: 'Find Brenai Studio on the PC', text: 'Look for Brenai Studio on the usual local ports and list how its page talks to its server.', status: 'queued' }); if (!workerOnline()) PA.jumpstart(['worker']).catch(() => {}); return send(res, 200, j); }
     if (p === '/api/studio/look' && req.method === 'POST') {
       /* read-only: Studio's settings, models, state, jobs, LLM status, and the code that builds its image request */
-      const calls = [{ path: '/api/config' }, { path: '/api/models' }, { path: '/api/state' }, { path: '/api/llm/status' }, { path: '/api/jobs', max: 1200 }, { path: '/app.js?v=ui4', grep: "api('image'" }, { path: '/app.js?v=ui4', grep: "api('jobs'", before: 300, after: 600 }];
+      const calls = [{ path: '/api/config' }, { path: '/api/models' }, { path: '/api/state' }, { path: '/api/llm/status' }, { path: '/api/jobs', max: 1200 }, { path: '/app.js?v=ui4', grep: "api('image'" }, { path: '/app.js?v=ui4', grep: 'function imageParams', before: 50, after: 900 }, { path: '/app.js?v=ui4', grep: 'function imgEngine', before: 50, after: 500 }];
       const j = L.add({ tool: 'image', mode: 'studio', backend: 'studio', runsOn: 'pc', label: 'Look inside Brenai Studio', text: 'Read Studio settings, models, state, jobs and how it builds an image request (changes nothing).', calls, status: 'queued' });
       if (!workerOnline()) PA.jumpstart(['worker']).catch(() => {}); return send(res, 200, j);
     }

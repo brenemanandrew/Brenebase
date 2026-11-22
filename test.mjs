@@ -23,7 +23,10 @@ const CASES = [
   ['Deploy brenai', 'ship:deploy'],
   ['Open the overtime kiosk', 'workapp:open'],
   ['I want a t-pose illustration front and back of my character wizra, both a realistic image and a cel shaded anime looking image for concept', 'image:model'],
-  ['Make concept art of a goblin merchant, realistic and anime versions', 'image:concept'],
+  ['Make concept art of a goblin merchant, realistic and anime versions', 'image:anime'],
+  ['make an anime picture of a fox spirit in a forest', 'image:anime'],
+  ['a picture of a lighthouse at sunset', 'image:realistic'],
+  ['use meshy to make concept art of a goblin', 'image:concept'],
   ['generate about 30 images of Wizra in a variety of poses and expressions', 'image:model'],
 ];
 let pass = 0;
