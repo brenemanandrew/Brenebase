@@ -26,6 +26,7 @@ select{background:var(--card);color:var(--text);border:1px solid var(--line);bor
 pre{white-space:pre-wrap;word-break:break-word;background:#0f1116;border-radius:8px;padding:10px;font-size:13px;max-height:340px;overflow:auto}
 h3{margin:18px 0 6px}.mode{margin:4px 0 4px 10px}
 #login{display:none}
+.pbar{height:12px;border-radius:999px;background:#2a2f3a;overflow:hidden;margin:6px 0 2px}.pbar>div{height:100%;background:linear-gradient(90deg,#2fbf71,#5be08f);border-radius:999px;transition:width .6s}
 /* the companion chat, in Brenai's format: a light page with dark ink, a round picture by each name, speech in a hand font, actions as pills */
 @font-face{font-family:"Patrick Hand";src:url(fonts/patrick-hand-latin-400-normal.woff2) format("woff2");font-display:swap}
 @font-face{font-family:"Bangers";src:url(fonts/bangers-latin-400-normal.woff2) format("woff2");font-display:swap}
@@ -204,7 +205,7 @@ function imPills() {
 async function imTab() {
   imPills();
   const d = await api('/api/jobs'); const js = (d.jobs || []).filter(j => j.tool === 'image' && ['realistic', 'anime', 'manga', 'h3', 'model'].includes(j.mode)).slice(0, 30);
-  $('imList').innerHTML = js.map(j => { const r = j.result || {}; return `<div class="card"><div class="row" style="margin:0"><span class="st-${j.status}">${j.status}</span><span class="dim" style="flex:1">${esc(j.label.replace(/^Images: /, ''))}</span>${j.status === 'failed' ? `<button class="sm" onclick="retryJob('${j.id}')">Retry</button>` : ''}</div><div style="margin:4px 0">${esc((j.sd && j.sd.prompt) || j.text || '').slice(0, 200)}</div>${j.step && ['queued', 'running'].includes(j.status) ? `<div class="st-running dim">${esc(j.step)}</div>` : ''}${j.error ? `<div class="st-failed" style="white-space:pre-wrap;font-size:13px">${esc(String(j.error).slice(0, 400))}</div>` : ''}${(r.images || []).map(u => `<a href="${esc(u)}" target="_blank" download><img src="${esc(u)}" style="width:48%;border-radius:8px;margin:4px 1%"></a>`).join('')}</div>`; }).join('') || '<p class="dim">Nothing made yet.</p>';
+  $('imList').innerHTML = js.map(j => { const r = j.result || {}; return `<div class="card"><div class="row" style="margin:0"><span class="st-${j.status}">${j.status}</span><span class="dim" style="flex:1">${esc(j.label.replace(/^Images: /, ''))}</span>${['failed', 'done'].includes(j.status) ? `<button class="sm" onclick="${j.status === 'failed' ? `retryJob('${j.id}')` : `againJob('${j.id}')`}.then(imTab)">${j.status === 'failed' ? 'Retry' : 'Make again'}</button>` : ''}</div><div style="margin:4px 0">${esc((j.sd && j.sd.prompt) || j.text || '').slice(0, 200)}</div>${progressBar(jobProgress(j))}${j.status === 'failed' ? `<div class="st-failed" style="font-size:14px;margin:4px 0">${esc(String(j.error || 'It failed without a message.').split('\n').filter(l => l.trim() && !/^\s*[|#=\[]/.test(l)).slice(0, 2).join(' ').slice(0, 300))}</div>` : ''}${(r.images || []).map(u => `<a href="${esc(u)}" target="_blank" download><img src="${esc(u)}" style="width:48%;border-radius:8px;margin:4px 1%"></a>`).join('')}</div>`; }).join('') || '<p class="dim">Nothing made yet.</p>';
 }
 const imPicShow = pasteTo('imPrompt', 'imPicPrev', d => { IMPIC = d; $('imStrRow').style.display = d ? '' : 'none'; }, 'Starting picture: the model reworks it to match your words');
 $('imStr').oninput = () => { $('imStrV').textContent = $('imStr').value; };
@@ -296,17 +297,36 @@ $('sendBtn').onclick = async () => {
   $('last').innerHTML = jobCard(j); $('pick').style.display = 'none'; $('thought').value = '';
 };
 
+/* a job's progress as one green bar: read from its live output (sampling steps, downloads, a percent) and the "picture 2 of 3" step */
+const QUIET_OUT = ['sd-image', 'studio-image', 'tts', 'pc-model', 'probe', 'engines', 'engine-help', 'skills-list', 'studio', 'read', 'readdir'];
+function jobProgress(j) {
+  if (!['running', 'queued'].includes(j.status)) return null;
+  const lines = String(j.live || '').split('\n').reverse(); let frac = null, phase = '';
+  for (const l of lines) {
+    let m = l.match(/(\d+)\s*\/\s*(\d+)\s*-\s*[\d.]+\s*(it\/s|s\/it)/); if (m) { frac = +m[1] / +m[2]; phase = 'drawing'; break; }
+    m = l.match(/(\d+)\s*\/\s*(\d+)\s*-\s*[\d.]+\s*[KMG]B\/s/); if (m) { frac = 0.1 * (+m[1] / +m[2]); phase = 'loading the model'; break; }
+    m = l.match(/(\d+(?:\.\d+)?)\s*%/); if (m) { frac = +m[1] / 100; phase = ''; break; }
+  }
+  const pic = String(j.step || '').match(/picture (\d+) of (\d+)/i);
+  if (frac == null && !pic) return j.status === 'queued' ? { pct: 0, label: 'Waiting for the PC' } : null;
+  const f = frac == null ? 0 : Math.max(0, Math.min(1, frac)), tot = pic ? +pic[2] : 1, i = pic ? +pic[1] : 1;
+  const pct = Math.round(((i - 1) + f) / tot * 100);
+  return { pct, label: `${pic && tot > 1 ? `Picture ${i} of ${tot}` : pic ? 'Picture' : 'Working'}${phase ? ': ' + phase : ''} &middot; ${pct}%` };
+}
+const progressBar = pg => pg ? `<div class="pbar"><div style="width:${pg.pct}%"></div></div><div class="dim" style="font-size:13px">${pg.label}</div>` : '';
 function jobCard(j) {
   const r = j.result || {};
   const btns = (j.status === 'waiting' ? `<button class="sm" onclick="act('${j.id}','approve')">${j.backend === 'split' ? 'OK, merge it' : 'OK, run it'}</button> ` : '') + (['waiting', 'queued', 'running'].includes(j.status) ? `<button class="sm" onclick="act('${j.id}','cancel')">Cancel</button> ` : '') + (j.backend === 'meshy' && j.status === 'running' ? `<button class="sm" onclick="act('${j.id}','refresh')">Check Meshy</button>` : '');
   const mins = s => s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;
   const P = j.parts, rep = j.report;
-  const statusLine = j.status === 'running' || j.status === 'queued' ? `<div class="st-${j.status}" style="margin:4px 0">${j.status === 'queued' ? 'Waiting for the PC' : 'Working'}${j.step ? ': ' + esc(j.step) : ''}${j.elapsed != null ? ' &middot; ' + mins(j.elapsed) : ''}</div>` : '';
+  const pg = jobProgress(j);
+  const statusLine = pg ? progressBar(pg) + (j.elapsed != null ? `<div class="dim" style="font-size:12px">${mins(j.elapsed)}</div>` : '') : j.status === 'running' || j.status === 'queued' ? `<div class="st-${j.status}" style="margin:4px 0">${j.status === 'queued' ? 'Waiting for the PC' : 'Working'}${j.step ? ': ' + esc(j.step) : ''}${j.elapsed != null ? ' &middot; ' + mins(j.elapsed) : ''}</div>` : '';
   const partsLine = P ? `<div style="margin:4px 0"><span class="st-done">${P.done} done</span> &middot; <span class="st-running">${P.running} running</span> &middot; <span class="st-waiting">${P.waiting} waiting</span>${P.failed ? ` &middot; <span class="st-failed">${P.failed} failed</span>` : ''} <span class="dim">of ${P.total} parts</span></div>` : '';
   const L = (h, a, cls) => a && a.length ? `<div style="margin:4px 0"><b class="${cls || ''}">${h}</b>${a.map(x => `<div class="mdli"><span>&bull;</span><span>${esc(x)}</span></div>`).join('')}</div>` : '';
   const reportBox = rep ? `<div class="card" style="margin:8px 0;border-color:${j.status === 'failed' ? 'var(--bad)' : 'var(--ok)'}">${(rep.skillErrors || []).length ? `<div class="st-waiting" style="font-size:13px">Skills not fully checked: ${esc(rep.skillErrors.join('; '))}</div>` : ''}<b>Report</b>${rep.skills ? `<div class="dim" style="font-size:13px">Skills used: ${rep.skills.length ? rep.skills.map(esc).join(', ') : 'none applied'}${rep.skillsBy ? ' (checked by ' + esc(rep.skillsBy) + ')' : ''}</div>` : ''}${L('Done', rep.done)}${L('Tested', rep.tested)}${L('Not tested', rep.notTested, 'st-waiting')}${L('Blocked', rep.blocked, 'st-failed')}${L('Next', rep.next)}</div>` : '';
   const raw = ['claude-code', 'merge'].includes(j.backend) ? r.text : '';
-  const output = j.live || raw || (r.text && j.status === 'failed') || r.diff ? `<details${j.status === 'running' ? ' open' : ''}><summary class="dim">Output${j.status === 'running' ? ' (live)' : ''} <button class="sm" style="padding:2px 8px;font-size:12px" onclick="event.preventDefault();copyOut(this)">Copy</button></summary><pre>${esc([raw || j.live, r.diff].filter(Boolean).join('\n\n') || r.text)}</pre></details>` : '';
+  /* picture, voice and PC model jobs show the bar and, if it fails, the error; not the engine's raw output */
+  const output = QUIET_OUT.includes(j.backend) ? '' : j.live || raw || (r.text && j.status === 'failed') || r.diff ? `<details${j.status === 'running' ? ' open' : ''}><summary class="dim">Output${j.status === 'running' ? ' (live)' : ''} <button class="sm" style="padding:2px 8px;font-size:12px" onclick="event.preventDefault();copyOut(this)">Copy</button></summary><pre>${esc([raw || j.live, r.diff].filter(Boolean).join('\n\n') || r.text)}</pre></details>` : '';
   const shut = isShut(j);
   return `<div class="card" id="job_${j.id}"><div class="row jhead" style="margin:0;cursor:pointer" onclick="toggleJob('${j.id}', event)"><b><span class="dim jarrow">${shut ? '&#9656;' : '&#9662;'}</span> ${esc(j.label)}</b>${j.area ? `<span class="tag">${esc(j.area)}</span>` : ''}<span class="tag">${esc(j.runsOn)}</span><span class="st-${j.status}">${j.status}</span></div>
   <div class="dim">${esc((j.text || '').slice(0, 160))}</div>
@@ -327,7 +347,7 @@ function jobCard(j) {
   ${r.audio ? `<audio controls src="${esc(r.audio)}" style="width:100%;margin-top:6px"></audio>` : ''}
   ${output}
   ${j.partJobs ? `<details${j.status !== 'done' ? ' open' : ''}><summary class="dim">The parts</summary>${j.partJobs.map(jobCard).join('')}</details>` : ''}
-  <div class="row">${btns}<button class="sm" onclick="checkJob('${j.id}', this)">Check status</button>${j.status === 'failed' ? `<button class="sm" onclick="retryJob('${j.id}')">Retry</button>` : ''}${j.status === 'done' && r.text ? `<button class="sm" onclick="speak('${j.id}', this)">&#128266; Read aloud</button>` : ''}</div></div></div>`;
+  <div class="row">${btns}<button class="sm" onclick="checkJob('${j.id}', this)">Check status</button>${j.status === 'failed' ? `<button class="sm" onclick="retryJob('${j.id}')">Retry</button>` : ''}${j.status === 'done' && ['sd-image', 'studio-image'].includes(j.backend) ? `<button class="sm" onclick="againJob('${j.id}').then(jobs)">Make again</button>` : ''}${j.status === 'done' && r.text ? `<button class="sm" onclick="speak('${j.id}', this)">&#128266; Read aloud</button>` : ''}</div></div></div>`;
 }
 /* job cards fold up by tapping their header. Done cards start folded; whatever you open or close is remembered. */
 const JOB_FOLD = JSON.parse(localStorage.getItem('jobFold') || '{}');
@@ -681,6 +701,7 @@ window.enginesFind = async b => { b.disabled = true; b.textContent = 'Looking (s
 window.studioLook = async b => { b.disabled = true; b.textContent = 'Reading (see Jobs)...'; await api('/api/studio/look', {}); };
 window.studioProbe = async b => { b.disabled = true; b.textContent = 'Looking (see Jobs)...'; await api('/api/studio/probe', {}); };
 window.checkJob = async (id, b) => { if (b) b.textContent = 'Checking...'; const j = await api(`/api/jobs/${id}`); const el = document.getElementById('job_' + id); if (el) el.outerHTML = jobCard(j); };
+window.againJob = async id => api(`/api/jobs/${id}/again`, {});
 window.retryJob = async id => { const j = await api(`/api/jobs/${id}/retry`, {}); const el = document.getElementById('job_' + id); if (el) el.outerHTML = jobCard(j); };
 window.act = async (id, what) => { const j = await api(`/api/jobs/${id}/${what}`, {}); jobs(); if ($('last').innerHTML.includes(id)) $('last').innerHTML = jobCard(j); };
 async function jobs() { const d = await api('/api/jobs' + (TAB ? `?thread=${TAB}` : '')); $('jobList').innerHTML = d.jobs.length ? jobGroups(d.jobs) : '<p class="dim">No jobs yet.</p>'; }

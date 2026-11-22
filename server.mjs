@@ -409,6 +409,9 @@ http.createServer(async (req, res) => {
     if (im) { const f = path.join(IMG_DIR, im[1]); if (!fs.existsSync(f)) return send(res, 404, {}); res.writeHead(200, { 'content-type': f.endsWith('.png') ? 'image/png' : f.endsWith('.wav') ? 'audio/wav' : f.endsWith('.jpg') ? 'image/jpeg' : 'image/webp' }); return fs.createReadStream(f).pipe(res); }
     const one = p.match(/^\/api\/jobs\/([a-f0-9]+)$/);
     if (one && req.method === 'GET') { const j = L.get(one[1]); return j ? send(res, 200, dress(j)) : send(res, 404, {}); }
+    /* make it again: a new job with the same request, so the pictures already made stay */
+    const ag = p.match(/^\/api\/jobs\/([a-f0-9]+)\/again$/);
+    if (ag && req.method === 'POST') { const o = L.get(ag[1]); if (!o) return send(res, 404, {}); const { noTwin, ...args } = o.args || {}; let j = makeJob({ text: o.text, tool: o.tool, mode: o.mode, area: o.area, autonomy: o.autonomy, args: { ...args, noTwin: true }, repo: o.repo, project: o.project || '', thread: o.thread, pic: o.pic }); if (j.status === 'ready') j = await start(j); return send(res, 200, dress(j)); }
     const rt = p.match(/^\/api\/jobs\/([a-f0-9]+)\/retry$/);
     if (rt && req.method === 'POST') {
       const j = L.get(rt[1]); if (!j) return send(res, 404, {}); delete j.skillCheck;

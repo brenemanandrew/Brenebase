@@ -227,7 +227,7 @@ async function doJob(j) { await progress(j, 'started on the PC', '', true);
     if (init) base.push('-i', init, '--strength', String(Math.max(0.05, Math.min(1, +b.strength || 0.6))));
     for (let i = 0; i < n; i++) {
       const seed = b.seed != null && b.seed !== '' ? +b.seed + i : Math.floor(Math.random() * 2 ** 31), out = path.join(dir, `${eng}-${seed}.png`);
-      await progress(j, `picture ${i + 1} of ${n} (${eng}, ${W}x${Hh})`, '', true);
+      j._tail = []; await progress(j, `picture ${i + 1} of ${n} (${eng}, ${W}x${Hh})`, '', true);
       const r = await run(SD, [...base, '-p', prompt, ...(neg ? ['-n', neg] : []), '-W', String(W), '-H', String(Hh), '-s', String(seed), '-o', out], path.dirname(SD), null, t => progress(j, `picture ${i + 1} of ${n}`, t));
       if (fs.existsSync(out)) images.push({ name: path.basename(out), data: fs.readFileSync(out).toString('base64') }); else logs.push((r.err || r.out).slice(-800));
     }
