@@ -178,7 +178,12 @@ async function doJob(j) { tail = []; await progress(j, 'started on the PC', '', 
     const calls = j.calls || [{ method: 'GET', path: '/openapi.json' }], out = [];
     for (const c of calls.slice(0, 10)) {
       if (!/^\/[\w\/.?=&%-]*$/.test(c.path || '')) { out.push({ path: c.path, error: 'bad path' }); continue; }
-      try { const r = await fetch(base + c.path, { method: c.method || 'GET', headers: c.body ? { 'content-type': 'application/json' } : {}, body: c.body ? JSON.stringify(c.body) : undefined, signal: AbortSignal.timeout(c.wait || 15000) }); const t = await r.text(); out.push({ path: c.path, status: r.status, body: t.slice(0, 4000) }); }
+      try {
+        const r = await fetch(base + c.path, { method: c.method || 'GET', headers: { 'x-studio': '1', ...(c.body ? { 'content-type': 'application/json' } : {}) }, body: c.body ? JSON.stringify(c.body) : undefined, signal: AbortSignal.timeout(c.wait || 15000) }); const t = await r.text();
+        /* grep: only the code around each match (to read how the page builds a request) */
+        if (c.grep) { const hits = []; let i = -1; while ((i = t.indexOf(c.grep, i + 1)) >= 0 && hits.length < 4) hits.push(t.slice(Math.max(0, i - (c.before || 900)), i + (c.after || 300))); out.push({ path: c.path, grep: c.grep, status: r.status, hits }); }
+        else out.push({ path: c.path, status: r.status, body: t.slice(0, c.max || 2500) });
+      }
       catch (e) { out.push({ path: c.path, error: String(e.message || e) }); }
     }
     return { ok: true, text: JSON.stringify(out, null, 1), result: { studio: out } };

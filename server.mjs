@@ -110,6 +110,7 @@ function report(j) {
     const rv = r.review; if (rv) R.tested.push(rv.verdict === 'ok' ? 'Claude Opus checked it: no changes needed.' : rv.verdict === 'fixed' ? `Claude Opus checked it and made ${rv.corrections.length} correction(s), listed below.` : rv.verdict === 'unreliable' ? 'Claude Opus judged it too wrong to use.' : rv.note); else R.notTested.push('Not checked by Claude Opus (simple, or the check is off).');
     R.next.push('Use it, or ask a follow-up in this tab.');
   } else if (j.backend === 'tts') { R.done.push('Read aloud.'); }
+  else if (j.backend === 'studio') { R.done.push('Read Brenai Studio (nothing was changed).'); R.next.push('Send me a screenshot of the Output (scroll through it all) so I can wire image jobs to Studio.'); }
   else if (j.backend === 'probe') { const st = (r.probe || []).filter(f => f.studio); if (st.length) { R.done.push(`Found Brenai Studio at ${st[0].url}.`); if (st[0].openapi) R.done.push(`It lists ${st[0].openapi.length} request types.`); R.next.push('Send me a screenshot of the Output below so I can wire image jobs to it.'); } else { R.blocked.push('Brenai Studio was not found on the usual ports.'); R.next.push('Open Brenai Studio and send me the address in its browser bar.'); } }
   else if (r.images && r.images.length) { R.done.push(`${r.images.length} picture(s) made.`); R.notTested.push('Look at them: a picture can only be judged by eye.'); if (r.restyle) R.next.push('Restyle realistic or anime with Meshy, or ask for a different pose.'); }
   else if (r.link) { R.done.push('Link ready.'); R.next.push('Open it.'); }
@@ -323,6 +324,12 @@ http.createServer(async (req, res) => {
       return send(res, 200, makeJob({ text: `${b.style || 'Realistic, detailed, natural lighting'}. Keep the same character, outfit, pose and framing. ${j.text}`, tool: 'image', mode: 'edit', area: j.area, autonomy: 'draft', args: { image_url: data }, project: j.project }));
     }
     if (p === '/api/studio/probe' && req.method === 'POST') { const j = L.add({ tool: 'image', mode: 'studio', backend: 'probe', runsOn: 'pc', label: 'Find Brenai Studio on the PC', text: 'Look for Brenai Studio on the usual local ports and list how its page talks to its server.', status: 'queued' }); if (!workerOnline()) PA.jumpstart(['worker']).catch(() => {}); return send(res, 200, j); }
+    if (p === '/api/studio/look' && req.method === 'POST') {
+      /* read-only: Studio's settings, models, state, jobs, LLM status, and the code that builds its image request */
+      const calls = [{ path: '/api/config' }, { path: '/api/models' }, { path: '/api/state' }, { path: '/api/llm/status' }, { path: '/api/jobs', max: 1200 }, { path: '/app.js?v=ui4', grep: "api('image'" }, { path: '/app.js?v=ui4', grep: "api('jobs'", before: 300, after: 600 }];
+      const j = L.add({ tool: 'image', mode: 'studio', backend: 'studio', runsOn: 'pc', label: 'Look inside Brenai Studio', text: 'Read Studio settings, models, state, jobs and how it builds an image request (changes nothing).', calls, status: 'queued' });
+      if (!workerOnline()) PA.jumpstart(['worker']).catch(() => {}); return send(res, 200, j);
+    }
     if (p === '/api/threads' && req.method === 'GET') return send(res, 200, { threads: TH.list() });
     if (p === '/api/threads' && req.method === 'POST') { const b = await body(req); return send(res, 200, b.id ? TH.update(b.id, b) : TH.open(b)); }
     if (p === '/api/companion' && req.method === 'GET') return send(res, 200, { ...CP.state(), waiting: L.list(80).some(j => j.companion && ['queued', 'running'].includes(j.status)), pc: workerOnline() });
