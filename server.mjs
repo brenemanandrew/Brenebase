@@ -369,10 +369,16 @@ http.createServer(async (req, res) => {
       const info = `${src.label}\nAsked: ${String(src.text || '').slice(0, 1500)}\nStatus: ${src.status}${src.error ? '\nError: ' + src.error : ''}\nResult:\n${String((src.result && src.result.text) || '').slice(0, 6000)}`;
       const rq = CP.requestAbout('results', info);
       const j = L.add({ tool: 'companion', mode: 'chat', backend: 'pc-model', runsOn: 'pc', label: 'Companion: about a result', text, system: rq.system, messages: rq.messages, maxTokens: 600, companion: true, convo: 'results', status: 'queued', quiet: true });
-      if (!workerOnline()) PA.jumpstart(['worker', 'model']).catch(() => {});
+      if (!workerOnline()) PA.jumpstart(['worker', 'model']).catch(() => {}); else if (!worker.can.includes('pc-model')) PA.jumpstart(['model']).catch(() => {});
       return send(res, 200, { ok: true, id: j.id });
     }
-    if (p === '/api/companion' && req.method === 'GET') return send(res, 200, { ...CP.state(), waiting: L.list(80).some(j => j.companion && ['queued', 'running'].includes(j.status)), pc: workerOnline() });
+    if (p === '/api/companion' && req.method === 'GET') {
+      /* say why a reply is not coming, instead of "thinking" forever */
+      const w = L.list(80).find(j => j.companion && ['queued', 'running'].includes(j.status));
+      const age = w ? Date.now() - w.at : 0;
+      const stuck = !w || age < 20000 ? '' : !workerOnline() ? 'Your PC worker is offline: PC tab, Start everything (or check the PC is on).' : !worker.can.includes('pc-model') ? 'The model is not loaded on your PC. Brenebase asked the PC to load it; if that does not work, PC tab, Load. Brenai Studio in Coding mode also unloads it.' : w.status === 'queued' ? 'Waiting for the PC worker to pick it up.' : age > 120000 ? 'The PC model is taking a long time; it may be busy or stuck. PC tab, Unload then Load.' : '';
+      return send(res, 200, { ...CP.state(), waiting: !!w, stuck, pc: workerOnline() });
+    }
     if (p === '/api/companion/setup' && req.method === 'POST') { const b = await body(req); return send(res, 200, { setup: CP.setup(b) }); }
     if (p === '/api/companion/convo' && req.method === 'POST') { const b = await body(req); return send(res, 200, CP.convo(b)); }
     if (p === '/api/companion/clear' && req.method === 'POST') { CP.clear(); return send(res, 200, { ok: true }); }
@@ -382,7 +388,7 @@ http.createServer(async (req, res) => {
       const mode = CP.MODES.includes(b.mode) ? b.mode : 'chat'; const convo = CP.state().current; CP.add('me', text, { mode, convo });
       const rq = CP.request(mode);
       const j = L.add({ tool: 'companion', mode, backend: 'pc-model', runsOn: 'pc', label: `Companion: ${mode}`, text, system: rq.system, messages: rq.messages, maxTokens: 600, companion: true, convo, status: 'queued', quiet: true });
-      if (!workerOnline()) PA.jumpstart(['worker', 'model']).catch(() => {});
+      if (!workerOnline()) PA.jumpstart(['worker', 'model']).catch(() => {}); else if (!worker.can.includes('pc-model')) PA.jumpstart(['model']).catch(() => {});
       return send(res, 200, { ok: true, id: j.id });
     }
     if (p === '/api/settings' && req.method === 'GET') return send(res, 200, SETTINGS);

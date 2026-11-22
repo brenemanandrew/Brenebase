@@ -71,6 +71,14 @@ function wav16(f32, rate) {
 const READ_ROOTS = (process.env.READ_ROOTS || 'G:\\My Drive;F:\\Projects;C:\\Program Files (x86)\\World of Warcraft\\_retail_\\Interface\\AddOns').split(';').map(r => path.resolve(r.trim())).filter(Boolean);
 can.push('read', 'readdir', 'probe', 'studio', 'studio-image');
 console.log(`hub worker: ${HUB}\ncan do: ${can.join(', ')}`);
+/* things can come up after the worker (LM Studio's server, Claude Code, the voice pack): look again every minute */
+setInterval(async () => {
+  const has = k => can.includes(k), set = (k, on) => { if (on && !has(k)) { can.push(k); console.log('now can do', k); } if (!on && has(k)) can.splice(can.indexOf(k), 1); };
+  set('pc-model', await bionicUp());
+  set('claude-code', found(`"${CLAUDE}"`));
+  if (!kokoroPath) for (const d of KOKORO_HOMES) { try { kokoroPath = createRequire(path.join(d, 'package.json')).resolve('kokoro-js'); break; } catch { } }
+  set('tts', !!kokoroPath);
+}, 60000);
 
 const run = (cmd, args, cwd, input, onOut) => new Promise(ok => {
   const p = spawn(cmd, args, { cwd, shell: process.platform === 'win32' || !args.length });

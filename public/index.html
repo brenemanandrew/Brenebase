@@ -245,7 +245,7 @@ function cpRender() {
   $('cpConvos').querySelectorAll('.tab').forEach(b => b.onclick = async e => { if (b.dataset.new) { const n = prompt('Name this conversation'); if (n == null) return; CP = await api('/api/companion/convo', { name: n || 'New' }); } else if (e.target.dataset.x) { if (!confirm('Close this conversation?')) return; CP = await api('/api/companion/convo', { id: CP.current, close: true }); } else CP = await api('/api/companion/convo', { id: b.dataset.c }); CP = await api('/api/companion'); cpSeen = (CP.history || []).length; cpRender(); });
   $('cpLog').innerHTML = h.map(m => m.who === 'me' ? `<div style="text-align:right;margin:6px 0"><span style="display:inline-block;background:#24324a;border-radius:12px;padding:8px 11px;max-width:85%;text-align:left;white-space:pre-wrap">${esc(m.text)}</span></div>` : m.who === 'note' ? `<div class="dim" style="margin:6px 0">${esc(m.text)}</div>` : `<div style="margin:6px 0"><span style="display:inline-block;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 11px;max-width:85%;white-space:pre-wrap">${esc(m.text)}</span></div>`).join('') || `<p class="dim">Say anything. It stays on your PC model.</p>`;
   $('cpLog').scrollTop = 1e9;
-  $('cpStatus').textContent = CP.waiting ? `${CP.setup.name} is thinking...` : CP.pc ? '' : 'PC worker offline: sending will try to start it.';
+  $('cpStatus').textContent = CP.stuck ? CP.stuck : CP.waiting ? `${CP.setup.name} is thinking...` : CP.pc ? '' : 'PC worker offline: sending will try to start it.'; $('cpStatus').className = CP.stuck ? 'st-waiting' : 'dim';
   if (cpAv) cpAv.setThinking(!!CP.waiting);
 }
 async function companion() {
@@ -275,7 +275,7 @@ async function cpPoll() {
   CP = await api('/api/companion'); const h = CP.history || [];
   if (h.length > cpSeen) { const fresh = h.slice(cpSeen); cpSeen = h.length; cpRender(); for (const m of fresh) if (m.who === 'them') { if (cpAv) { cpAv.feel(m.text); cpAv.act && cpAv.act(m.text); } if (CP.setup.speak && m.job) cpSpeak(m.job); } }
   else cpRender();
-  if (CP.waiting) cpTimer = setTimeout(cpPoll, 2000);
+  if (CP.waiting) cpTimer = setTimeout(cpPoll, CP.stuck ? 6000 : 2000);
 }
 $('cpSend').onclick = async () => {
   const t = $('cpIn').value.trim(); if (!t) return; $('cpIn').value = '';
