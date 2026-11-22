@@ -31,5 +31,7 @@ export function vet(text) {
   const parts = merged.map(g => { const r = resolve(g.tool || 'planner', g.mode); return { tool: r.tool, mode: r.mode, label: r.label, text: g.text.join('. '), why: g.why }; });
   const gp = plan(tg.rest);
   const game = gp.mechanics.length && (gp.art.length || gp.story.length) && parts.some(p => p.tool === 'coder' || p.tool === 'make3d');
-  return { tags: tg, parts, suggest: game ? 'split' : parts.length > 1 ? 'parts' : 'single' };
+  /* only pictures, nothing to build: that is the Images tool, not a split */
+  const picturesOnly = !gp.mechanics.length && gp.art.length && parts.every(p => p.tool === 'image');
+  return { tags: tg, parts, suggest: game && !picturesOnly ? 'split' : parts.length > 1 ? 'parts' : 'single', picturesOnly: !!picturesOnly };
 }
