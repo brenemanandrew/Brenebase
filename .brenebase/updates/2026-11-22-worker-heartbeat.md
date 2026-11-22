@@ -44,3 +44,7 @@ title: Worker stays online during long jobs, runs jobs side by side
 - Tested in headless Chromium: groups render, a card folds on tap and stays folded through the 5 second refresh, a group folds; no page errors
 - A PC job the worker no longer holds (worker restarted or replaced) is failed after 10 quiet minutes with "Lost track of this job on the PC", so Retry shows. Heartbeat now sends the ids of the jobs it holds. Not tested with a real 10 minute wait
 - Fold arrow sits inline with the job title; tapping the PC/Model/Worker lights opens the PC tab
+
+## Fixed (root cause of the red Worker light)
+- PC agent thought a killed worker was still running (a killed process keeps exitCode null), so after every self-update the worker was stopped and never started again, and Start replied "already running". The agent now counts a helper alive only until its exit event
+- Tested: agent plus worker here, stop then start: status went running, stopped (SIGTERM), running, and the hub saw the worker online

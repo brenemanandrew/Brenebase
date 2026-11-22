@@ -67,18 +67,21 @@ async function modelState() {
   } catch { return { server: false, loaded: [] }; }
 }
 
+/* a helper stopped by a kill has exitCode null (only signalCode is set), so exitCode alone said "still running" and Start
+   refused for good after every update. A process counts as alive only until its exit event. */
+const alive = p => !!p && !p.ended && p.exitCode === null && p.signalCode === null;
 function startHelper(name) {
   const h = HELPERS[name]; if (!h) return `no helper called ${name}`;
   if (!h.file) return `${h.label} is not set up on this PC`;
   if (!fs.existsSync(h.file)) return `${h.label}: file not found (${h.file})`;
-  if (running[name] && running[name].exitCode === null) return `${h.label} already running`;
+  if (alive(running[name])) return `${h.label} already running`;
   const p = spawn(process.execPath, [h.file], { cwd: path.dirname(h.file), env: { ...process.env, ...(h.env || {}) }, windowsHide: true });
   p.log = []; const keep = d => { p.log.push(...String(d).split('\n').filter(Boolean)); p.log = p.log.slice(-60); };
-  p.stdout.on('data', keep); p.stderr.on('data', keep); p.on('exit', c => keep(`(stopped, code ${c})`));
+  p.stdout.on('data', keep); p.stderr.on('data', keep); p.on('exit', (c, sig) => { p.ended = true; keep(`(stopped, code ${c}${sig ? ', ' + sig : ''})`); });
   running[name] = p; return `${h.label} started`;
 }
 function stopHelper(name) {
-  const p = running[name]; if (!p || p.exitCode !== null) return `${(HELPERS[name] || {}).label || name} was not running`;
+  const p = running[name]; if (!alive(p)) return `${(HELPERS[name] || {}).label || name} was not running`;
   p.kill(); return `${HELPERS[name].label} stopped`;
 }
 
@@ -87,7 +90,7 @@ async function status() {
   return {
     pc: os.hostname(), at: new Date().toISOString(), uptimeMin: Math.round(os.uptime() / 60),
     model: { name: MODEL, context: +CTX, server: m.server, loaded: m.loaded, lmsFound: fs.existsSync(LMS) },
-    helpers: Object.fromEntries(Object.entries(HELPERS).map(([k, h]) => [k, { label: h.label, setUp: !!h.file && fs.existsSync(h.file), running: !!running[k] && running[k].exitCode === null, log: (running[k] && running[k].log || []).slice(-8) }])),
+    helpers: Object.fromEntries(Object.entries(HELPERS).map(([k, h]) => [k, { label: h.label, setUp: !!h.file && fs.existsSync(h.file), running: alive(running[k]), log: (running[k] && running[k].log || []).slice(-8) }])),
     files: Object.fromEntries(['worker/hub-worker.mjs', 'pc/brenebase-agent.mjs'].map(f => { try { return [f, crypto.createHash('sha1').update(fs.readFileSync(path.join(BASE, f))).digest('hex').slice(0, 7)]; } catch { return [f, 'missing']; } })),
   };
 }
