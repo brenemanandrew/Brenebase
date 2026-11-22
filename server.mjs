@@ -69,6 +69,57 @@ const send = (res, code, obj) => { res.writeHead(code, { 'content-type': 'applic
 const body = req => new Promise(ok => { let b = ''; req.on('data', c => { b += c; if (b.length > 2e6) req.destroy(); }); req.on('end', () => { try { ok(JSON.parse(b || '{}')); } catch { ok({}); } }); });
 
 /* a routed thought becomes a job. Whether it runs now or waits depends on autonomy, the tool's gate and whether it spends credits. */
+/* ---- the report every finished job ends with, in the same shape as a Claude session's: done, tested, not tested,
+   blocked (with the fix), next step. Built from what the job knows; no model is asked. ---- */
+const FIXES = [
+  [/No checkout at|Could not clone/i, 'The repo is not on your PC. The worker now clones it by itself: tap Retry. If the clone fails, run git clone once by hand on the PC so git can sign in to GitHub.'],
+  [/claude.*(not found|not recognized|ENOENT)|Claude Code is not installed/i, 'Claude Code is not on the PC: irm https://claude.ai/install.ps1 | iex, then run claude once to sign in, then Retry.'],
+  [/Bionic|1234|ECONNREFUSED/i, 'The PC model is not answering: PC tab, Load the model, then Retry.'],
+  [/401|rejected the API key|bearer/i, 'Claude rejected the API key: replace BRENEBASE_ANTHROPIC_KEY in GitHub and deploy.'],
+  [/Meshy (401|403)/i, 'Meshy refused the key: set BRENEBASE_MESHY_KEY in GitHub and deploy.'],
+  [/BRENAI_COOKIES|playwright/i, 'The Brenai renderer is not set up on the PC: npm i playwright, npx playwright install chromium, and set BRENAI_COOKIES.'],
+  [/outside READ_ROOTS/i, 'That folder is not one Brenebase may read: add it to READ_ROOTS on the PC.'],
+  [/Not sent to Copilot/i, 'Pick Claude or the PC model for this one instead.'],
+];
+const firstSentences = (t, n = 2) => String(t || '').replace(/```[\s\S]*?```/g, ' ').replace(/[#*_`>]/g, '').replace(/\s+/g, ' ').trim().split(/(?<=[.!?])\s+/).slice(0, n).join(' ').slice(0, 300);
+function sectionFrom(text, re) { const m = String(text || '').match(new RegExp(`(?:^|\\n)[#*\\s]*(?:${re})[^\\n]*\\n?([\\s\\S]*?)(?:\\n\\s*\\n[#*]*\\s*[A-Z]|$)`, 'i')); return m ? m[1].split('\n').map(l => l.replace(/^\s*[-*\d.]+\s*/, '').trim()).filter(Boolean).slice(0, 4) : []; }
+function report(j) {
+  const r = j.result || {}, R = { done: [], tested: [], notTested: [], blocked: [], next: [] };
+  if (j.status === 'failed' || j.error) {
+    R.blocked.push(String(j.error || 'It failed without a message.').split('\n')[0].slice(0, 300));
+    const fx = FIXES.find(([re]) => re.test(j.error || '')); R.next.push(fx ? fx[1] : 'Tap Retry. If it fails the same way, send me a screenshot of this card.');
+    return R;
+  }
+  if (j.status !== 'done') return null;
+  const t = r.text || '';
+  if (j.backend === 'claude-code') {
+    /* Claude puts its summary at the end: take the last paragraph before any Tested / Not tested section */
+    const body = String(t).split(/\n\s*#*\s*(?:\*\*)?(?:tested|what i tested|not tested|could not test|verified)\b/i)[0];
+    const paras = body.split(/\n\s*\n/).map(x => x.trim()).filter(x => x && !/^(working on|step \d|reading|editing|running)\b/i.test(x));
+    R.done.push(firstSentences(paras[paras.length - 1] || body.split('\n').filter(l => l.trim()).pop()) || 'Claude Code finished.'); if (r.branch) R.done.push(`Work is on branch ${r.branch} in ${j.repo || 'the repo'}.`);
+    if (r.diff) { const m = r.diff.match(/(\d+) files? changed/); R.done.push(m ? `${m[1]} file(s) changed.` : 'See the change list in Output.'); }
+    R.tested = sectionFrom(t, 'tested|what i tested|verified'); R.notTested = sectionFrom(t, 'not tested|could not test|untested');
+    if (!R.tested.length) R.notTested.push('Claude Code did not say what it tested: check the branch before merging.');
+    R.next.push(j.parent ? 'The split continues: art and story parts, then Merge.' : `Look over branch ${r.branch || ''}, then tell me to merge or deploy it.`);
+  } else if (j.backend === 'merge') {
+    R.done.push('Art and story were put into the code and committed on the branch.');
+    R.tested = String(t).split('\n').filter(l => /test (passed|FAILED)/i.test(l)); R.notTested.push(...String(t).split('\n').filter(l => /REJECTED|EMPTY/.test(l)));
+    R.next.push('Run it and look at the points listed in Output.');
+  } else if (j.tool === 'copilot') {
+    R.done.push(firstSentences(t) || 'Copilot answered.');
+    const rv = r.review; if (rv) R.tested.push(rv.verdict === 'ok' ? 'Claude Opus checked it: no changes needed.' : rv.verdict === 'fixed' ? `Claude Opus checked it and made ${rv.corrections.length} correction(s), listed below.` : rv.verdict === 'unreliable' ? 'Claude Opus judged it too wrong to use.' : rv.note); else R.notTested.push('Not checked by Claude Opus (simple, or the check is off).');
+    R.next.push('Use it, or ask a follow-up in this tab.');
+  } else if (j.backend === 'tts') { R.done.push('Read aloud.'); }
+  else if (r.images && r.images.length) { R.done.push(`${r.images.length} picture(s) made.`); R.notTested.push('Look at them: a picture can only be judged by eye.'); if (r.restyle) R.next.push('Restyle realistic or anime with Meshy, or ask for a different pose.'); }
+  else if (r.link) { R.done.push('Link ready.'); R.next.push('Open it.'); }
+  else {
+    R.done.push(firstSentences(t) || 'Answered.');
+    R.notTested.push(j.backend === 'pc-model' ? 'Answered by your PC model; nothing was run or checked.' : 'An answer, not a change: nothing was run or checked against your files.');
+    R.next.push(j.tool === 'planner' ? 'Pick the first action, or Send it to the Coder.' : 'Ask a follow-up in this tab, or act on it.');
+  }
+  return R;
+}
+
 /* Brenai renderer specs for a picture of Wizra: a front and back sheet in T-pose unless a pose is named */
 function wizraSpecs(text) {
   const t = String(text).toLowerCase(), T = { leftUpperArm: [0, 0, 0], rightUpperArm: [0, 0, 0], leftLowerArm: [0, 0, 0], rightLowerArm: [0, 0, 0], leftHand: [0, 0, 0], rightHand: [0, 0, 0] };
@@ -79,6 +130,13 @@ function wizraSpecs(text) {
   return specs;
 }
 const IMG_DIR = path.join(process.env.DATA_DIR || './data', 'images');
+/* what the page shows: the job plus its report, how long it has run, and for a split how many parts are where */
+function dress(j) {
+  const o = { ...j, report: report(j) };
+  if (j.status === 'running' || j.status === 'queued') o.elapsed = Math.round((Date.now() - (j.startedAt || j.at)) / 1000);
+  if (j.children) { const kids = j.children.map(id => L.get(id)).filter(Boolean); o.parts = { done: kids.filter(k => k.status === 'done').length, failed: kids.filter(k => k.status === 'failed').length, waiting: kids.filter(k => ['waiting', 'held', 'waiting-answer'].includes(k.status)).length, running: kids.filter(k => ['queued', 'running', 'ready'].includes(k.status)).length, total: kids.length }; }
+  return o;
+}
 /* Only what a person would read out loud goes to the voice: no code, links, paths, tables, JSON, *actions* or
    formatting marks. Capped so a long answer does not tie the PC up. Empty means no voice job at all. */
 export function speakable(text, cap = 1500) {
@@ -215,11 +273,14 @@ http.createServer(async (req, res) => {
       return send(res, 200, u ? { ok: true, id: u.id } : { ok: true, note: 'already had it, or nothing in it' });
     }
 
+    /* ---- live progress from the PC worker ---- */
+    if (p === '/api/worker/progress' && req.method === 'POST') { if (!isWorker(req)) return send(res, 401, {}); worker.seen = Date.now(); const b = await body(req); const j = L.get(b.id); if (j) { j.step = String(b.step || '').slice(0, 120); j.stepAt = Date.now(); j.live = String(b.log || '').slice(-6000); if (!j.startedAt) j.startedAt = Date.now(); } return send(res, 200, { ok: true }); }
+
     /* ---- the PC worker ---- */
     if (p.startsWith('/api/worker/')) {
       if (!isWorker(req)) return send(res, 401, { error: 'worker token refused' });
       worker.seen = Date.now();
-      if (p === '/api/worker/next') { worker.can = (u.searchParams.get('can') || '').split(',').filter(Boolean); return send(res, 200, { job: L.next(worker.can) }); }
+      if (p === '/api/worker/next') { worker.can = (u.searchParams.get('can') || '').split(',').filter(Boolean); const nj = L.next(worker.can); if (nj) { nj.startedAt = Date.now(); nj.step = 'picked up by the PC'; } return send(res, 200, { job: nj }); }
       if (p === '/api/worker/done' && req.method === 'POST') { const b = await body(req); const j = L.get(b.id); if (!j) return send(res, 404, {}); if (j.backend === 'readdir') { const n = b.ok ? U.fromPcFiles(b.result && b.result.files, j.dir) : 0; return send(res, 200, L.update(j.id, { status: b.ok ? 'done' : 'failed', error: b.error, result: { text: `${n} new update(s)` } }, 'update folder read')); }
       if (j.backend === 'read') { if (b.ok && b.result && b.result.foundAt && b.result.foundAt !== j.source.path) PJ.remember(j.project, j.source.path, b.result.foundAt); const added = PJ.recordPc(j.project, j.source, b.ok, b.text || '', b.error); return send(res, 200, L.update(j.id, { status: b.ok ? 'done' : 'failed', error: b.error, result: { text: b.ok ? `${added.length} new note(s)` : '' } }, 'notes read')); } const text = b.text != null ? rejoin(b.text, j.held || []) : undefined; if (j.companion && b.ok) CP.add('them', b.text || '', { job: j.id, convo: j.convo }); else if (j.companion) CP.add('note', `No reply: ${b.error || 'the PC model did not answer'}`, { convo: j.convo });
         if (b.result && b.result.audio64) { fs.mkdirSync(IMG_DIR, { recursive: true }); const f = `${j.id}.wav`; fs.writeFileSync(path.join(IMG_DIR, f), Buffer.from(b.result.audio64, 'base64')); b.result.audio = `/api/img/${f}`; delete b.result.audio64; if (j.of) { const src = L.get(j.of); if (src) L.update(src.id, { result: { ...src.result, audio: b.result.audio } }, 'read aloud ready'); } }
@@ -235,7 +296,14 @@ http.createServer(async (req, res) => {
     const im = p.match(/^\/api\/img\/([\w.-]+)$/);
     if (im) { const f = path.join(IMG_DIR, im[1]); if (!fs.existsSync(f)) return send(res, 404, {}); res.writeHead(200, { 'content-type': f.endsWith('.png') ? 'image/png' : f.endsWith('.wav') ? 'audio/wav' : 'image/webp' }); return fs.createReadStream(f).pipe(res); }
     const one = p.match(/^\/api\/jobs\/([a-f0-9]+)$/);
-    if (one && req.method === 'GET') { const j = L.get(one[1]); return j ? send(res, 200, j) : send(res, 404, {}); }
+    if (one && req.method === 'GET') { const j = L.get(one[1]); return j ? send(res, 200, dress(j)) : send(res, 404, {}); }
+    const rt = p.match(/^\/api\/jobs\/([a-f0-9]+)\/retry$/);
+    if (rt && req.method === 'POST') {
+      const j = L.get(rt[1]); if (!j) return send(res, 404, {});
+      L.update(j.id, { error: undefined, step: '', live: '', startedAt: 0 }, 'retried');
+      if (PC_BACKENDS.includes(j.backend)) { L.update(j.id, { status: 'queued' }); if (!workerOnline()) PA.jumpstart(['worker']).catch(() => {}); return send(res, 200, dress(L.get(j.id))); }
+      return send(res, 200, dress(await start(L.update(j.id, { status: 'ready' }))));
+    }
     const sp = p.match(/^\/api\/jobs\/([a-f0-9]+)\/speak$/);
     if (sp && req.method === 'POST') {
       /* read a job's answer aloud with the voice pack on the PC */
@@ -300,7 +368,7 @@ http.createServer(async (req, res) => {
     if (p === '/api/split/plan' && req.method === 'POST') { const b = await body(req); const pl = b.plan || P.plan(b.text); if (b.add) P.addSlot(pl, b.add); return send(res, 200, { plan: pl, brief: P.codeBrief(pl, { id: 'NEW', repo: b.repo }), leaks: P.leaks(pl), types: Object.keys(P.SLOT_TYPES) }); }
     if (p === '/api/split/run' && req.method === 'POST') { const b = await body(req); if (!b.plan || !b.plan.mechanics.length) return send(res, 400, { error: 'nothing for the code part to build' }); return send(res, 200, startSplit(b)); }
     if (p === '/api/jobs' && req.method === 'GET') { const tf = u.searchParams.get('thread'); const NEED = { 'claude-code': 'Claude Code is not installed or not signed in on the PC (npm i -g @anthropic-ai/claude-code, then run claude once to sign in)', 'blender': 'Blender is not found on the PC (set BLENDER to blender.exe)', tts: 'the voice pack is not found on the PC (run start-wizra.ps1 once)', 'pc-model': 'the model is not loaded (PC tab: Load)' };
-      for (const j of L.list(200)) if (j.status === 'queued' && workerOnline() && PC_BACKENDS.includes(j.backend) && !worker.can.includes(j.backend)) j.stuck = `Waiting: ${NEED[j.backend] || 'this PC cannot do ' + j.backend}.`; else delete j.stuck; return send(res, 200, { jobs: L.list(200).filter(j => !j.quiet && (!tf || j.thread === tf || (j.parent && (L.get(j.parent) || {}).thread === tf))).slice(0, 80), worker: { online: workerOnline(), can: worker.can } }); }
+      for (const j of L.list(200)) if (j.status === 'queued' && workerOnline() && PC_BACKENDS.includes(j.backend) && !worker.can.includes(j.backend)) j.stuck = `Waiting: ${NEED[j.backend] || 'this PC cannot do ' + j.backend}.`; else delete j.stuck; return send(res, 200, { jobs: L.list(200).filter(j => !j.quiet && (!tf || j.thread === tf || (j.parent && (L.get(j.parent) || {}).thread === tf))).slice(0, 80).map(dress), worker: { online: workerOnline(), can: worker.can } }); }
     if (p === '/api/jobs' && req.method === 'POST') { const b = await body(req); let j = makeJob(b); if (j.status === 'ready') j = await start(j); return send(res, 200, j); }
     const fm = p.match(/^\/api\/jobs\/([a-f0-9]+)\/fill$/);
     if (fm && req.method === 'POST') { const b = await body(req); const par = L.get(fm[1]); if (!par || !par.slots) return send(res, 404, {}); fillSlot(par, b.slot, b.value ? { source: b.source || 'url', value: b.value, from: 'you' } : null); L.update(par.id, {}, `${b.slot} ${b.value ? 'filled by you' : 'cleared'}`); return send(res, 200, afterChange({ parent: par.id })); }

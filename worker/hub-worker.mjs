@@ -72,24 +72,40 @@ const READ_ROOTS = (process.env.READ_ROOTS || 'G:\\My Drive;F:\\Projects;C:\\Pro
 can.push('read', 'readdir');
 console.log(`hub worker: ${HUB}\ncan do: ${can.join(', ')}`);
 
-const run = (cmd, args, cwd, input) => new Promise(ok => {
+const run = (cmd, args, cwd, input, onOut) => new Promise(ok => {
   const p = spawn(cmd, args, { cwd, shell: process.platform === 'win32' || !args.length });
-  let out = '', err = ''; p.stdout.on('data', d => out += d); p.stderr.on('data', d => err += d);
+  let out = '', err = ''; p.stdout.on('data', d => { out += d; if (onOut) onOut(String(d)); }); p.stderr.on('data', d => { err += d; if (onOut) onOut(String(d)); });
+  p.on('error', e => ok({ code: -1, out, err: String(e.message) }));
   if (input) { p.stdin.write(input); p.stdin.end(); }
   p.on('close', code => ok({ code, out: out.slice(-20000), err: err.slice(-4000) }));
 });
 
-async function doJob(j) {
+/* tell Brenebase what step a job is on, with the last lines of output, at most every 4 seconds */
+let lastPost = 0, tail = [];
+async function progress(j, step, text, force) {
+  if (text) tail = tail.concat(String(text).split(/\r?\n/).filter(Boolean)).slice(-40);
+  if (!force && Date.now() - lastPost < 4000) return; lastPost = Date.now();
+  try { await fetch(`${HUB}/api/worker/progress`, { method: 'POST', headers: H, body: JSON.stringify({ id: j.id, step, log: tail.join('\n') }) }); } catch { /* the result still goes back at the end */ }
+}
+async function doJob(j) { tail = []; await progress(j, 'started on the PC', '', true);
   if (j.backend === 'pc-model') {
     const r = await fetch(`${BIONIC}/v1/chat/completions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'system', content: j.system || '' }, ...(j.messages && j.messages.length ? j.messages : [{ role: 'user', content: j.text }])], temperature: 0.8, max_tokens: j.maxTokens || 800 }) });
     const d = await r.json(); return { ok: r.ok, text: d.choices?.[0]?.message?.content || '', error: r.ok ? undefined : JSON.stringify(d).slice(0, 300) };
   }
   if (j.backend === 'claude-code') {
     const repo = path.join(REPOS, (j.repo || 'brenemanandrew/Brenelandtest').split('/').pop());
-    if (!fs.existsSync(repo)) return { ok: false, error: `No checkout at ${repo}. Clone it there or set REPOS.` };
+    /* the repo is not on this PC yet: clone it into REPOS (uses the PC's own git sign-in for private repos) */
+    if (!fs.existsSync(repo)) {
+      await progress(j, `cloning ${j.repo || 'brenemanandrew/Brenelandtest'} into ${REPOS}`, '', true); fs.mkdirSync(REPOS, { recursive: true });
+      const c = await run('git', ['clone', `https://github.com/${j.repo || 'brenemanandrew/Brenelandtest'}.git`, repo], REPOS, null, t => progress(j, 'cloning', t));
+      if (c.code || !fs.existsSync(repo)) return { ok: false, error: `Could not clone ${j.repo} into ${repo}: ${(c.err || c.out).slice(-300)}` };
+    }
     const branch = j.parent ? `hub/${j.parent}` : `hub/${j.id}`;
+    await progress(j, `switching to branch ${branch}`, '', true);
     await run('git', ['checkout', '-B', branch], repo);
-    const r = await run(CLAUDE, ['-p', '--output-format', 'text'], repo, j.prompt);
+    await progress(j, 'Claude Code is working', '', true);
+    const r = await run(CLAUDE, ['-p', '--output-format', 'text'], repo, j.prompt, t => progress(j, 'Claude Code is working', t));
+    await progress(j, 'committing on the branch', '', true);
     await run('git', ['add', '-A'], repo); await run('git', ['commit', '-m', `hub: ${j.label}`], repo);
     const diff = await run('git', ['diff', '--stat', 'HEAD~1'], repo);
     let merge = null; try { merge = JSON.parse(fs.readFileSync(path.join(repo, 'hub-merge.json'), 'utf8')); } catch { /* not written; the hub also looks in the reply */ }
@@ -144,7 +160,7 @@ async function doJob(j) {
 /* Merge: put each filled slot where the code's manifest says, check it, run the build test, commit on the branch. */
 async function merge(j) {
   const repo = path.join(REPOS, (j.repo || 'brenemanandrew/Brenelandtest').split('/').pop());
-  if (!fs.existsSync(repo)) return { ok: false, error: `No checkout at ${repo}` };
+  if (!fs.existsSync(repo)) return { ok: false, error: `No checkout at ${repo}: run the code part first (it clones the repo)` };
   const co = await run('git', ['checkout', j.branch], repo); if (co.code) return { ok: false, error: `Could not switch to ${j.branch}: ${co.err}` };
   const where = Object.fromEntries(((j.manifest && j.manifest.slots) || []).map(x => [x.id, x.path]));
   const report = [];
