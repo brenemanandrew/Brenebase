@@ -257,6 +257,8 @@ http.createServer(async (req, res) => {
     /* ---- files the PC installer downloads (no secrets in any of them) ---- */
     const PCFILES = { 'worker/render-brenai.cjs': 'worker/render-brenai.cjs', 'pc/brenebase-agent.mjs': 'pc/brenebase-agent.mjs', 'pc/install-agent.ps1': 'pc/install-agent.ps1', 'worker/hub-worker.mjs': 'worker/hub-worker.mjs', 'worker/blender_ops.py': 'worker/blender_ops.py', 'parts.mjs': 'parts.mjs' };
     const pcf = p.match(/^\/(?:pc-files\/)?(.+)$/); const pcKey = pcf && (p.startsWith('/pc-files/') ? pcf[1] : p === '/pc/install-agent.ps1' ? 'pc/install-agent.ps1' : null);
+    /* what the PC should be running: a hash per file, so the agent can update itself */
+    if (p === '/pc-files/manifest.json') { const m = {}; for (const k of Object.keys(PCFILES)) { try { m[k] = crypto.createHash('sha1').update(fs.readFileSync(path.join(path.dirname(PUB), PCFILES[k]))).digest('hex'); } catch { } } return send(res, 200, m); }
     if (pcKey && PCFILES[pcKey]) { res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }); return fs.createReadStream(path.join(path.dirname(PUB), PCFILES[pcKey])).pipe(res); }
 
     /* ---- the PC agent's polling (same PC key as the worker) ---- */

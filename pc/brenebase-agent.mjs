@@ -31,6 +31,7 @@ import { spawn } from 'child_process';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
+import crypto from 'crypto';
 
 const HOME = os.homedir();
 const HERE = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
@@ -117,13 +118,38 @@ async function act(action) {
 
 /* ---- way 1: Tailscale (and this PC itself) ---- */
 const onTailnet = a => { a = String(a || '').replace(/^::ffff:/, ''); if (a === '127.0.0.1' || a === '::1') return true; if (a.toLowerCase().startsWith('fd7a:115c:a1e0:')) return true; const m = a.match(/^100\.(\d+)\./); return !!m && +m[1] >= 64 && +m[1] <= 127; };
-http.createServer(async (req, res) => {
+const srv = http.createServer(async (req, res) => {
   const send = (c, o) => { res.writeHead(c, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
   if (!onTailnet(req.socket.remoteAddress)) return send(403, { error: 'only answered on the tailnet' });
   if (req.headers.authorization !== `Bearer ${KEY}`) return send(401, { error: 'PC key refused' });
   const action = decodeURIComponent(new URL(req.url, 'http://x').pathname.slice(1)) || 'status';
   send(200, await act(action).catch(e => ({ ok: false, note: String(e.message || e) })));
-}).listen(PORT, () => console.log(`Brenebase agent on :${PORT} (tailnet only), polling ${HUB}`));
+});
+const listen = n => srv.listen(PORT, () => console.log(`Brenebase agent on :${PORT} (tailnet only), polling ${HUB}`)).once('error', e => { if (e.code === 'EADDRINUSE' && n < 10) setTimeout(() => listen(n + 1), 2000); });
+listen(0);
+
+/* keeps itself current: every 10 minutes it compares its files with Brenebase's and downloads any that changed.
+   A new worker is restarted; a new agent starts a fresh copy of itself and this one exits. AGENT_UPDATE=off turns it off. */
+const FILES = { 'pc/brenebase-agent.mjs': 'pc/brenebase-agent.mjs', 'worker/hub-worker.mjs': 'worker/hub-worker.mjs', 'worker/blender_ops.py': 'worker/blender_ops.py', 'worker/render-brenai.cjs': 'worker/render-brenai.cjs', 'parts.mjs': 'parts.mjs' };
+async function selfUpdate() {
+  if (process.env.AGENT_UPDATE === 'off') return;
+  try {
+    const want = await (await fetch(`${HUB}/pc-files/manifest.json`, { signal: AbortSignal.timeout(10000) })).json(); const changed = [];
+    for (const [k, rel] of Object.entries(FILES)) {
+      if (!want[k]) continue; const local = path.join(BASE, rel);
+      const have = fs.existsSync(local) ? crypto.createHash('sha1').update(fs.readFileSync(local)).digest('hex') : '';
+      if (have === want[k]) continue;
+      const body = Buffer.from(await (await fetch(`${HUB}/pc-files/${k}`, { signal: AbortSignal.timeout(30000) })).arrayBuffer());
+      if (crypto.createHash('sha1').update(body).digest('hex') !== want[k]) continue;
+      fs.mkdirSync(path.dirname(local), { recursive: true }); fs.writeFileSync(local, body); changed.push(k);
+    }
+    if (!changed.length) return;
+    console.log('updated:', changed.join(', '));
+    if (changed.some(k => k.startsWith('worker/') || k === 'parts.mjs')) { stopHelper('worker'); setTimeout(() => console.log(startHelper('worker')), 1500); }
+    if (changed.includes('pc/brenebase-agent.mjs')) { stopHelper('worker'); spawn(process.execPath, [path.join(BASE, 'pc', 'brenebase-agent.mjs')], { cwd: path.join(BASE, 'pc'), detached: true, stdio: 'ignore', windowsHide: true }).unref(); setTimeout(() => process.exit(0), 500); }
+  } catch { /* try again next time */ }
+}
+setTimeout(selfUpdate, 5000); setInterval(selfUpdate, 10 * 60000);
 
 /* the worker starts with the agent (at login), so jobs run without anyone tapping Start. AGENT_AUTOSTART=off turns it off. */
 if (process.env.AGENT_AUTOSTART !== 'off') console.log(startHelper('worker'));
