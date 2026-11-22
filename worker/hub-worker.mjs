@@ -33,8 +33,8 @@ if (!TOKEN) { console.log('Set HUB_WORKER_TOKEN first.'); process.exit(1); }
 
 /* named scripts the hub may ask for. Nothing outside this list runs. */
 const PC_SCRIPTS = {
-  'make3d:check': j => ['node', [path.join(REPOS, 'Brenelandtest/pipeline/jstest/piece.mjs'), j.args.piece || '']],
-  'motion:library': j => ['node', [path.join(REPOS, 'Brenelandtest/brenai/tools/clipconv.mjs'), j.args.in || path.join(REPOS, 'clips-in'), j.args.out || path.join(REPOS, 'clips-out')]],
+  'make3d:check': j => [process.execPath, [path.join(REPOS, 'Brenelandtest/pipeline/jstest/piece.mjs'), j.args.piece || '']],
+  'motion:library': j => [process.execPath, [path.join(REPOS, 'Brenelandtest/brenai/tools/clipconv.mjs'), j.args.in || path.join(REPOS, 'clips-in'), j.args.out || path.join(REPOS, 'clips-out')]],
   'ship:test': j => ['npx', ['serve', path.join(REPOS, j.args.site || 'Brenelandtest/site')]],
 };
 
@@ -119,7 +119,7 @@ async function doJob(j) { tail = []; await progress(j, 'started on the PC', '', 
   if (j.backend === 'pc-run' && j.tool === 'image' && j.mode === 'model') {
     const dir = path.join(os.tmpdir(), 'brenebase-render-' + j.id); fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'specs.json'), JSON.stringify(j.args.specs || []));
-    const r = await run('node', [path.join(HERE, 'render-brenai.cjs'), path.join(dir, 'specs.json'), path.join(dir, 'out')], path.join(HERE, '..'));
+    const r = await run(process.execPath, [path.join(HERE, 'render-brenai.cjs'), path.join(dir, 'specs.json'), path.join(dir, 'out')], path.join(HERE, '..'));
     const files = fs.existsSync(path.join(dir, 'out')) ? fs.readdirSync(path.join(dir, 'out')) : [];
     const images = files.map(f => ({ name: f, data: fs.readFileSync(path.join(dir, 'out', f)).toString('base64') }));
     return { ok: images.length > 0, text: r.out.slice(-1500), result: { images64: images }, error: images.length ? undefined : (r.out + r.err).slice(-800) };
