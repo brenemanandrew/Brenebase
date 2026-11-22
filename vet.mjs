@@ -5,7 +5,7 @@
    4. One group: a normal job. Several groups: "Send as parts", one job per group, each still going through every check
       (keep-local split, private projects stay off the cloud, the Copilot fit check, OK gates).
       Code plus art or story for a game: the game Split (contract, slots, merge) is suggested instead. */
-import { clauses, plan } from './parts.mjs';
+import { clauses, plan, isAddOn } from './parts.mjs';
 import { ruleRoute } from './route.mjs';
 import { resolve } from './tools.mjs';
 import * as T from './tags.mjs';
@@ -16,7 +16,7 @@ export function vet(text) {
   const groups = [];
   for (const c of cs) {
     /* add-ons ("2 images", "16:9", "in anime style", "realistic") belong to the request before them */
-    const addOn = /^(\d{1,2}\s*(images?|pictures?|pics?|versions?|renders?|variations?|of them)|\d+:\d+|(in\s+)?(an?\s+)?(anime|realistic|cel[- ]?shaded|portrait|landscape|square|wide|tall)(\s+(style|version|format|one))?|please|thanks?|asap|high quality|hd|4k)$/i.test(c.trim()) || c.trim().split(/\s+/).length <= 2;
+    const addOn = isAddOn(c) || c.trim().split(/\s+/).length <= 2;
     if (addOn && groups.length) { groups[groups.length - 1].text.push(c); continue; }
     const r = ruleRoute(c);
     const strong = r.pick && r.confidence > 0;
@@ -25,6 +25,8 @@ export function vet(text) {
     if (!key || (last && last.tool === key)) { if (last) { last.text.push(c); continue; } }
     groups.push({ tool: key || (r.pick && r.pick.tool) || null, mode: r.pick && r.pick.mode, text: [c], why: r.why });
   }
+  /* a vague opening clause ("lighthouse at sunset") belongs to the part that follows it ("2 images realistic") */
+  if (groups.length > 1 && !groups[0].tool && !/^(please\s+)?(write|draft|plan|make|build|create|fix|research|summari[sz]e|rewrite|tell|explain|help|find|check|send|add|give|list|compare|schedule)\b/i.test(groups[0].text[0])) { const g = groups.shift(); groups[0].text.unshift(...g.text); }
   /* a tool tag decides the tool for the part that has none, and for a single-part statement */
   for (const g of groups) if (!g.tool && tg.tool) { g.tool = tg.tool; g.mode = tg.mode; }
   if (groups.length === 1 && tg.tool) { groups[0].tool = tg.tool; groups[0].mode = tg.mode || groups[0].mode; }

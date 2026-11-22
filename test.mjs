@@ -57,6 +57,9 @@ const v1 = vet('Hubbell: fix the bug where the kiosk shows the old build, plan t
 const v2 = vet('SUI: the bag frame overlaps the minimap');
 const v3 = vet('Note: buy milk');
 SPLIT.push(
+  ['"lighthouse at sunset, 2 images realistic" is one picture job, no Planner part', (v => v.parts.length === 1 && v.parts[0].tool === 'image')(vet('lighthouse at sunset, 2 images realistic'))],
+  ['the Split screen puts a picture request on the art side', P.plan('lighthouse at sunset, 2 images realistic').mechanics.length === 0],
+  ['a story and pictures still go to two places', vet('write a story about a lighthouse keeper and draw 2 pictures of the lighthouse').parts.length === 2],
   ['an add-on like "2 images" stays with its request', vet('a lighthouse at sunset, 2 images').parts.length === 1 && vet('a lighthouse at sunset, 2 images').parts[0].tool === 'image'],
   ['tag sets the project (Hubbell -> work)', v1.tags.project === 'work'],
   ['whole statement vetted into 3 parts', v1.suggest === 'parts' && v1.parts.map(p => p.tool).join() === 'coder,expert,companion'],

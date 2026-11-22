@@ -18,7 +18,7 @@ const has = (t, w) => t.includes(' ' + w + ' ');
 
 const ART = ['image', 'images', 'picture', 'pictures', 'pic', 'pics', 'photo', 'photos', 'render', 'renders', 'pose', 'poses', 'illustration', 'illustrations', 'drawing', 'drawings', 'concept art', 'sprite sheet', 'portrait', 'portraits', 'visual', 'visuals', 'look', 'looks', 'looking', 'style', 'styled', 'art', 'cel', 'cel shaded', 'toon', 'shaded', 'color', 'colors', 'colour', 'colours', 'palette', 'texture', 'textures', 'aesthetic', 'pixel', 'low poly', 'sprite', 'sprites', 'like my', 'vibe', 'graphics', 'lighting', 'mood board', 'reference', 'art style', 'outfit', 'outfits', 'wearing', 'hair', 'pretty', 'cute', 'gritty', 'dark fantasy', 'painted'];
 const STORY = ['story', 'lore', 'backstory', 'plot', 'named', 'called', 'personality', 'history', 'legend', 'dialogue', 'dialog', 'lines', 'script', 'narrative', 'tone', 'setting', 'world building', 'his name', 'her name', 'their name', 'who is'];
-const VERBS = ['use', 'make', 'have', 'has', 'with', 'it', 'its', 'the', 'they', 'you', 'there', 'then', 'give', 'add', 'draft', 'write', 'plan', 'fix', 'build', 'summarize', 'summarise', 'rewrite', 'proofread', 'research', 'schedule', 'check', 'create', 'send', 'help', 'also', 'i'];
+const VERBS = ['use', 'make', 'have', 'has', 'with', 'it', 'its', 'the', 'they', 'you', 'there', 'then', 'give', 'add', 'draft', 'write', 'plan', 'fix', 'build', 'summarize', 'summarise', 'draw', 'paint', 'show', 'rewrite', 'proofread', 'research', 'schedule', 'check', 'create', 'send', 'help', 'also', 'i'];
 
 /* slot types: what the code needs to know, nothing else */
 export const SLOT_TYPES = {
@@ -50,6 +50,13 @@ export function clauses(text) {
   return out;
 }
 
+/* add-ons ("2 images", "realistic", "16:9", "2 images realistic") belong to the request before them */
+const ADDON_WORDS = new Set('image images picture pictures pic pics version versions render renders variation variations of them in a an anime realistic cel shaded cel-shaded portrait landscape square wide tall style format one please thanks thank you asap high quality hd 4k 8k each more x'.split(' '));
+export function isAddOn(c) {
+  const ws = String(c).toLowerCase().replace(/[.,!]/g, ' ').trim().split(/\s+/).filter(Boolean);
+  return ws.length > 0 && ws.every(w => ADDON_WORDS.has(w) || /^\d{1,2}$/.test(w) || /^\d+:\d+$/.test(w) || /^\d+x\d*$/.test(w));
+}
+
 function side(c) {
   if (c.forced) return c.forced;
   const t = lc(c.text);
@@ -73,7 +80,9 @@ function neutralize(text, names) {
 }
 
 export function plan(text) {
-  const cs = clauses(text).map(c => ({ ...c, side: side(c) }));
+  const cs0 = [];
+  for (const c of clauses(text)) { const l = cs0[cs0.length - 1]; if (l && !c.forced && !l.forced && isAddOn(c.text)) l.text += ', ' + c.text; else cs0.push({ ...c }); }
+  const cs = cs0.map(c => ({ ...c, side: side(c) }));
   const names = new Map();
   /* instructions to Brenebase about the routing ("without giving Claude anything...", "don't tell Claude") are not part of the task */
   const META = /\b(claude|copilot|the (ai|llm|model))\b.*\b(might|would|will|could|may)\b.*\b(find|refuse|mind|object|flag|object to|not like)\b|\b(without|don'?t|do not|never)\b.*\b(giving|give|sending|send|telling|tell|showing|show)\b.*\b(claude|copilot|the ai)\b|^(independently|separately|on its own)$/i;

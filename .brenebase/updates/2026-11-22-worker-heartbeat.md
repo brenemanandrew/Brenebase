@@ -28,3 +28,11 @@ title: Worker stays online during long jobs, runs jobs side by side
 
 ## Open
 - Why the real Studio picture job does not finish (field names for Studio's image call are still guesses)
+
+## Done (later the same day)
+- Split fix: "lighthouse at sunset, 2 images realistic" is one picture job; the subject no longer goes to the Planner on its own. Add-ons of several words ("2 images in anime style") now stay with their request in both Send as parts and the Split screen
+- "and draw / paint / show ..." now starts a new part
+
+## Tested (later the same day)
+- Worker went green on Andrew's PC after the deploy and Update now (screenshot)
+- 3 new checks in test.mjs for the split fix; node test.mjs 51/51
