@@ -42,6 +42,7 @@ const PC_SCRIPTS = {
 const found = cmd => new Promise(ok => { let p; try { p = spawn(cmd, ['--version'], { shell: true, stdio: 'ignore', windowsHide: true }); } catch { return ok(false); } const t = setTimeout(() => { try { p.kill(); } catch { } ok(false); }, 15000); p.on('error', () => { clearTimeout(t); ok(false); }); p.on('exit', c => { clearTimeout(t); ok(c === 0); }); });
 async function bionicUp() { try { return (await fetch(`${BIONIC}/v1/models`, { signal: AbortSignal.timeout(5000) })).ok; } catch { return false; } }
 const can = [];
+console.log('worker starting: checking the PC model, Claude Code, Blender, git (each has a time limit)');
 if (await bionicUp()) can.push('pc-model');
 /* Claude Code: on the PATH, or where its Windows installer puts it (%USERPROFILE%\.local\bin), or CLAUDE */
 const CLAUDE = process.env.CLAUDE || [path.join(os.homedir(), '.local', 'bin', process.platform === 'win32' ? 'claude.exe' : 'claude')].find(f => fs.existsSync(f)) || 'claude';
