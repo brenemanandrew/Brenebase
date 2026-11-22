@@ -71,7 +71,7 @@ function wav16(f32, rate) {
 }
 /* project notes on this PC: only files inside these folders can be read (Google Drive for desktop, project folders) */
 const READ_ROOTS = (process.env.READ_ROOTS || 'G:\\My Drive;F:\\Projects;C:\\Program Files (x86)\\World of Warcraft\\_retail_\\Interface\\AddOns').split(';').map(r => path.resolve(r.trim())).filter(Boolean);
-can.push('read', 'readdir', 'probe', 'studio', 'studio-image');
+can.push('read', 'readdir', 'probe', 'studio', 'studio-image', 'engines');
 console.log(`hub worker: ${HUB}\ncan do: ${can.join(', ')}`);
 /* things can come up after the worker (LM Studio's server, Claude Code, the voice pack): look again every minute */
 setInterval(async () => {
@@ -182,6 +182,32 @@ async function doJob(j) { await progress(j, 'started on the PC', '', true);
     return { ok: true, text: `spoken with ${v}`, result: { audio64: wav16(all, rate).toString('base64') } };
   }
   /* find Brenai Studio on this PC and list how its page talks to its server, so Brenebase can be wired to it */
+  /* where Brenai Studio's image and movie engines live, so Brenebase can run them itself: the program behind port 7860,
+     the lines in its code that start an engine, engine programs and model files on the drives. Reads only, changes nothing. */
+  if (j.backend === 'engines') {
+    const out = { studio: null, engineLines: [], programs: [], models: {} };
+    if (process.platform === 'win32') {
+      const ps = await run('powershell', ['-NoProfile', '-Command', "$c = Get-NetTCPConnection -LocalPort 7860 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1; if ($c) { Get-CimInstance Win32_Process -Filter \"ProcessId=$($c.OwningProcess)\" | Select-Object ProcessId,ExecutablePath,CommandLine | ConvertTo-Json }"], os.homedir());
+      try { out.studio = JSON.parse(ps.out); } catch { out.studio = { raw: (ps.out || ps.err).slice(0, 800) }; }
+    }
+    /* Studio's folder: from its command line (a script path), else the usual places */
+    const cl = String((out.studio && out.studio.CommandLine) || '');
+    const scriptPath = (cl.match(/"([^"]+\.(?:py|js|mjs|cjs))"|(\S+\.(?:py|js|mjs|cjs))/i) || []).slice(1).find(Boolean);
+    const roots = [...new Set([scriptPath && path.dirname(scriptPath), out.studio && out.studio.ExecutablePath && path.dirname(out.studio.ExecutablePath), path.join(os.homedir(), 'Brenai'), path.join(os.homedir(), 'BrenaiStudio'), 'F:\\AI', 'C:\\AI', 'D:\\AI'].filter(Boolean))];
+    out.roots = roots.filter(r => fs.existsSync(r));
+    const ENG = /sd-cli|sd\.exe|stable-diffusion|diffusers|comfy|llama|ltx|wan2|hunyuan|cogvideo|\bsvd\b|mochi|framepack|--steps|--cfg|--sampling|image-models|video-models|\.gguf|\.safetensors|minimax|zimage|z-image|illustrious|ffmpeg|spawn\(|execFile|subprocess/i;
+    let seen = 0;
+    const walk = (d, depth) => { if (depth < 0 || seen > 20000) return; let es; try { es = fs.readdirSync(d, { withFileTypes: true }); } catch { return; } seen += es.length;
+      for (const e of es) { const f = path.join(d, e.name);
+        if (e.isDirectory()) { if (!/^(node_modules|\.git|__pycache__|venv|\.venv|env|site-packages|outputs?|cache|logs?)$/i.test(e.name)) walk(f, depth - 1); continue; }
+        if (/\.(exe)$/i.test(e.name) && /sd|diffus|llama|ltx|wan|video|ffmpeg|comfy/i.test(e.name)) out.programs.push(f);
+        if (/\.(gguf|safetensors|ckpt|bin)$/i.test(e.name)) { try { const st = fs.statSync(f); if (st.size > 50e6) (out.models[d] ||= []).push(`${e.name} (${Math.round(st.size / 1e6)} MB)`); } catch { } }
+        if (/\.(py|js|mjs|cjs|json|bat|ps1|cmd|toml|ya?ml)$/i.test(e.name) && out.engineLines.length < 500) { try { const st = fs.statSync(f); if (st.size > 600000) continue; const lines = fs.readFileSync(f, 'utf8').split(/\r?\n/); lines.forEach((l, i) => { if (ENG.test(l) && out.engineLines.length < 500) out.engineLines.push(`${path.relative(d.split(path.sep).slice(0, 3).join(path.sep), f)}:${i + 1}: ${l.trim().slice(0, 240)}`); }); } catch { } }
+      } };
+    for (const r of out.roots) walk(r, 5);
+    const text = [`Studio process: ${JSON.stringify(out.studio || 'nothing on port 7860')}`, `Looked in: ${out.roots.join(', ') || 'none found'}`, `Engine programs:\n${out.programs.join('\n') || 'none found'}`, `Model files:\n${Object.entries(out.models).map(([d, l]) => d + '\n  ' + l.join('\n  ')).join('\n') || 'none found'}`, `Lines that start or configure engines:\n${out.engineLines.join('\n')}`].join('\n\n');
+    return { ok: true, text: text.slice(0, 60000), result: { engines: out } };
+  }
   if (j.backend === 'probe') {
     const ports = [...new Set([+(process.env.STUDIO_PORT || 0), 7860, 7861, 7862, 8188, 8000, 8001, 8080, 8081, 8090, 8765, 8888, 3000, 3001, 5000, 5001, 5173, 4000, 9000].filter(Boolean))];
     const found = [];

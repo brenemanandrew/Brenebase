@@ -10,7 +10,7 @@
    Jobs for the PC sit in the ledger as "queued" until worker/hub-worker.mjs picks them up. */
 import { split } from './split.mjs';
 
-export const PC_BACKENDS = ['claude-code', 'pc-model', 'blender', 'pc-run', 'merge', 'read', 'readdir', 'tts', 'probe', 'studio', 'studio-image'];
+export const PC_BACKENDS = ['claude-code', 'pc-model', 'blender', 'pc-run', 'merge', 'read', 'readdir', 'tts', 'probe', 'studio', 'studio-image', 'engines'];
 export const SPENDS = ['meshy'];
 
 /* How each tool + mode is told to behave. The mode is the whole point: same tool, different handling. */
