@@ -215,7 +215,7 @@ const SKILL_BACKENDS = ['claude-code', 'claude', 'brief', 'copilot', 'pc-model',
 async function skillCheck(j) {
   if (!SKILL_BACKENDS.includes(j.backend) || j.quiet || j.companion || j.skillCheck) return j.skillCheck || null;
   const pj = j.project && PJ.card(j.project), local = /\[\[local\]\]/i.test(j.text || '') || !!(pj && pj.private);
-  const c = await SK.check(String(j.text || '').slice(0, 4000), { claude: local ? null : claude, local }).catch(e => ({ by: 'none', lines: [], used: [], errors: [`skill check failed: ${e.message || e}`] }));
+  const c = await SK.check(String(j.text || '').slice(0, 4000), { claude: null, local })   /* rules plus the planner's picks; no Claude */.catch(e => ({ by: 'none', lines: [], used: [], errors: [`skill check failed: ${e.message || e}`] }));
   /* skills the planner picked for this part stay picked, even if this check would have missed them */
   for (const n of j.plannedSkills || []) { if (c.used.includes(n)) continue; const l = c.lines.find(x => x.name === n); if (l) Object.assign(l, { used: true, reason: 'picked by the planner when the jobs were worked out' }); else c.lines.push({ name: n, used: true, reason: 'picked by the planner when the jobs were worked out' }); c.used.push(n); }
   L.update(j.id, { skillCheck: c }, `skills checked (${c.by}): ${c.used.length ? 'using ' + c.used.join(', ') : 'none apply'}`);
@@ -478,7 +478,7 @@ http.createServer(async (req, res) => {
     }
     if (p === '/api/studio/probe' && req.method === 'POST') { const j = L.add({ tool: 'image', mode: 'studio', backend: 'probe', runsOn: 'pc', label: 'Find Brenai Studio on the PC', text: 'Look for Brenai Studio on the usual local ports and list how its page talks to its server.', status: 'queued' }); if (!workerOnline()) PA.jumpstart(['worker']).catch(() => {}); return send(res, 200, j); }
     if (p === '/api/skills' && req.method === 'GET') { const a = SK.all(); return send(res, 200, { skills: a.skills.map(x => ({ name: x.name, description: x.description, from: x.from, src: x.src })), errors: a.errors, pc: SK.pcState() }); }
-    if (p === '/api/skills/check' && req.method === 'POST') { const b = await body(req); const c = await SK.check(String(b.task || ''), { claude: b.rulesOnly ? null : claude }); return send(res, 200, { ...c, log: SK.logLines(c) }); }
+    if (p === '/api/skills/check' && req.method === 'POST') { const b = await body(req); const c = await SK.check(String(b.task || ''), { claude: null }); return send(res, 200, { ...c, log: SK.logLines(c) }); }
     if (p === '/api/skills/sync' && req.method === 'POST') { const j = L.add({ tool: 'skills', mode: 'read', backend: 'skills-list', runsOn: 'pc', label: 'Read the skill folders on the PC', text: 'Read every SKILL.md in the PC skill folders.', status: 'queued' }); return send(res, 200, j); }
     if (p === '/api/studio/vision' && req.method === 'POST') { const calls = [{ path: '/api/llm/status', max: 4000 }, ...['image_url', 'vision', 'mmproj', 'caption', 'llm/chat', 'describe', 'paste', 'readAsDataURL'].map(g => ({ path: '/', grep: g, before: 700, after: 500 })), { path: '/api/config', max: 6000 }]; const j = L.add({ tool: 'image', mode: 'studio', backend: 'studio', runsOn: 'pc', label: 'How Brenai Studio reads pictures', text: 'Read how Brenai Studio reads a picture (its model and the request it sends), so Brenebase can use the same. Changes nothing. Keep Brenai Studio open.', calls, status: 'queued' }); return send(res, 200, j); }
     if (p === '/api/engines/help' && req.method === 'POST') { const j = L.add({ tool: 'image', mode: 'studio', backend: 'engine-help', runsOn: 'pc', label: "Read the picture and movie engine's options", text: 'Run sd-cli --help and read the notes next to it, so the movie model can be wired up exactly. Changes nothing.', status: 'queued' }); return send(res, 200, j); }
@@ -559,7 +559,7 @@ http.createServer(async (req, res) => {
     }
     if (p === '/api/route' && req.method === 'POST') {
       const b = await body(req); const v = vet(b.text); const tg = v.tags;
-      const r = await route(tg.rest || b.text, { claude });
+      const r = await route(tg.rest || b.text, { pcModel: (sys, t) => askPc(sys, t, 45000) });
       /* a tool tag is a head start: it wins only when the statement is one part */
       if (tg.tool && v.parts.length === 1) { r.pick = resolve(v.parts[0].tool, v.parts[0].mode); r.why = `Tag ${tg.found.join(' + ')}: ${r.pick.label}`; r.confidence = 1; r.question = ''; }
       if (tg.area) r.area = tg.area;

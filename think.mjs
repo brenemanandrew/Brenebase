@@ -2,10 +2,8 @@
    It decides how many parts there are, which tool and mode each goes to, what each part is told (only what that tool
    needs: the coder never gets the art or the story), and which parts must wait for another part's result.
 
-   Who thinks
-     a private request (a private project such as work, a work tag, or [[local]] in it)  -> the PC model only
-     anything else                                                                        -> Claude, or the PC model if Claude is off
-     neither answers                                                                      -> the rules (vet.mjs), as before
+   Who thinks: Andrew's PC model, for every request (Claude is kept for code and for checking Copilot).
+     The PC model busy or off -> the rules (vet.mjs) split it.
    The plan is shown before anything runs; nothing is sent to a tool until Andrew taps Run. */
 import { TOOLS, resolve } from './tools.mjs';
 import { vet } from './vet.mjs';
@@ -80,7 +78,8 @@ export async function think(text, { claude, askPc, project, tags } = {}) {
     }
     return { ...p, skillErrors: all.errors, skillCount: all.skills.length };
   };
-  const tries = local ? ['pc'] : [claude ? 'claude' : null, askPc ? 'pc' : null].filter(Boolean);
+  /* Brenebase plans on Andrew's PC model, never Claude (Claude is only for code and for checking Copilot); the rules are the fallback */
+  const tries = askPc ? ['pc'] : [];
   const notes = [];
   for (const who of tries) {
     try {

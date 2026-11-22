@@ -24,3 +24,7 @@ title: One chat screen that works out the jobs, runs them and shows the results
 
 ## Tested
 - Emulated Pixel 7: no element scrolls sideways on any tab; the menu opens and closes; picking PC from it works; no page errors; node test.mjs 61/61
+
+## Settings changed
+- Planning is back on Andrew's PC model: think.mjs never calls Claude (PC model first, the rules when the PC model is busy or off); the skill check uses the rules plus the planner's picks; the Planner and Professional expert tools run on the PC model (were Claude); "Pick the tool" asks the PC model when the rules are unsure. Claude is now used only for code (Claude Code on the PC), the Copilot check, and reading pictures if Andrew chooses Claude for that
+- Tested: with a Claude stand-in that fails if called, planning made 0 Claude calls (PC model planned; rules when the PC was off); new check in test.mjs, 62/62

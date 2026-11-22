@@ -39,7 +39,7 @@ export const TOOLS = [
     },
   },
   {
-    id: 'planner', type: 'think', name: 'Planner', runsOn: 'cloud', backend: 'claude',
+    id: 'planner', type: 'think', name: 'Planner', runsOn: 'pc', backend: 'pc-model',
     what: 'Turns a goal into steps, owners, dates and a next action. Files the plan where it belongs.',
     built: [],
     modes: {
@@ -50,7 +50,7 @@ export const TOOLS = [
     },
   },
   {
-    id: 'expert', type: 'think', name: 'Professional expert', runsOn: 'cloud', backend: 'claude',
+    id: 'expert', type: 'think', name: 'Professional expert', runsOn: 'pc', backend: 'pc-model',
     what: 'Answers as a specialist. The mode is the specialty. Work data can be set to stay on the PC model.',
     built: [],
     modes: {
