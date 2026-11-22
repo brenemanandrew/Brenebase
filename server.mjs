@@ -184,7 +184,7 @@ function makeJob({ text, tool, mode, area, autonomy = 'draft', args = {}, repo, 
   /* a private (work) project's context never goes to the cloud: those jobs move to the PC model */
   if (pj && pj.private && r.backend === 'claude') r = { ...r, backend: 'pc-model', runsOn: 'pc' };
   const job = { text, area: area || (pj && pj.area), autonomy, args, repo: repo || (pj && pj.repo && pj.repo.includes('/') && !pj.repo.includes(' ') ? pj.repo : undefined), target, project: pj ? pj.id : null, thread: th ? th.id : undefined, ...(studioBody ? { studioBody } : {}), ...r };
-  const safe = ['brief', 'claude', 'link', 'copilot'].includes(r.backend) || (r.backend === 'pc-model') || (tool === 'image' && ['model', 'realistic', 'anime', 'h3'].includes(r.mode));
+  const safe = ['brief', 'claude', 'link', 'copilot', 'doll'].includes(r.backend) || (r.backend === 'pc-model') || (tool === 'image' && ['model', 'realistic', 'anime', 'h3'].includes(r.mode));
   const mustAsk = r.gate === 'always' || SPENDS.includes(r.backend) || autonomy === 'ask' || (autonomy === 'draft' && !safe);
   const made = L.add({ ...job, status: mustAsk ? 'waiting' : 'ready' });
   if (studioBody && ['realistic', 'anime'].includes(r.mode) && /realistic|photo/i.test(text) && /anime|manga|cel|toon/i.test(text) && !args.noTwin) {
@@ -198,6 +198,7 @@ function makeJob({ text, tool, mode, area, autonomy = 'draft', args = {}, repo, 
 
 async function start(j) {
   try {
+    if (j.backend === 'doll') { L.update(j.id, { status: 'running', step: 'the PC model is using the doll skill' }); const cur = CP.state().setup || {}; const d = await dollAsk(j.mode === 'new' ? `Make a new doll: ${j.text}` : j.text, j.mode === 'new' ? {} : cur); return L.update(j.id, d.error ? { status: 'failed', error: d.error } : { status: 'done', result: { text: d.note || 'Doll ready.', doll: d } }, d.error ? 'doll skill failed' : 'doll ready'); }
     if (j.backend === 'brief') { const b = brief(j, PJ.context(j.project && PJ.card(j.project), 'code', j.text)); return L.update(j.id, { status: 'done', result: { text: b.prompt }, held: b.held }, b.secrets ? `${b.secrets} secret(s) removed` : 'brief written'); }
     if (j.backend === 'link') { const f = LINKS[`${j.tool}:${j.mode}`]; return L.update(j.id, { status: 'done', result: { link: f ? f(j.target) : null, text: j.does } }, 'link ready'); }
     if (j.backend === 'claude') { L.update(j.id, { status: 'running' }); const r = await runClaude(j, claude, PJ.context(j.project && PJ.card(j.project), 'cloud', j.text), j.thread ? TH.history(L.list(200).filter(x => x.id !== j.id), j.thread) : []); return L.update(j.id, { status: 'done', result: { text: rejoin(r.text, r.held) } }, 'answered by Claude'); }
@@ -250,6 +251,16 @@ function startSplit({ text, plan, repo, label, thread }) {
 function fillSlot(parent, id, fill) { const sl = parent.slots.find(x => x.id === id); if (sl) sl.fill = fill; }
 
 /* called after any change to a job that belongs to a split */
+/* the doll skill (skills/doll.md): the PC model turns words into a doll's look; checked here, never saved until he taps Save. No cloud model. */
+const SKILLS = path.join(path.dirname(new URL(import.meta.url).pathname), 'skills');
+async function dollAsk(text, current = {}) {
+  const out = await askPc(fs.readFileSync(path.join(SKILLS, 'doll.md'), 'utf8'), `The doll right now:\n${JSON.stringify({ look: current.look || {}, reactions: current.reactions || {} })}\n\nRequest: ${text}`);
+  if (out == null) return { error: 'Your PC model is not free right now. The doll skill runs only on your PC: check the Worker and Model lights.' };
+  const m = String(out).match(/\{[\s\S]*\}/); let j = null; try { j = m && JSON.parse(m[0]); } catch { }
+  if (!j) return { error: 'The PC model did not answer with a doll. Try saying it another way.', raw: String(out).slice(0, 400) };
+  return { name: j.name ? String(j.name).slice(0, 40) : undefined, look: { ...(current.look || {}), ...CP.cleanLook(j.look) }, reactions: { ...(current.reactions || {}), ...CP.cleanReactions(j.reactions) }, note: String(j.note || '').slice(0, 300) };
+}
+
 /* a picture read by Claude (only when he chose Claude as the picture reader for the companion) */
 async function describeImage(kind, b64) {
   const r = await claude.beta.messages.create({ model: process.env.HUB_ROUTER_MODEL || 'claude-opus-5-5', max_tokens: 600, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
@@ -418,6 +429,9 @@ http.createServer(async (req, res) => {
     }
     if (p === '/api/companion/setup' && req.method === 'POST') { const b = await body(req); return send(res, 200, { setup: CP.setup(b) }); }
     if (p === '/api/companion/convo' && req.method === 'POST') { const b = await body(req); return send(res, 200, CP.convo(b)); }
+    if (p === '/api/doll/ask' && req.method === 'POST') { const b = await body(req); if (!String(b.text || '').trim()) return send(res, 400, { error: 'say what to change' }); return send(res, 200, await dollAsk(String(b.text).slice(0, 2000), b.current || (CP.state().setup || {}))); }
+    if (p === '/api/dolls' && req.method === 'GET') return send(res, 200, { dolls: CP.dolls() });
+    if (p === '/api/dolls' && req.method === 'POST') { const b = await body(req); return send(res, 200, { dolls: b.drop ? CP.dropDoll(b.drop) : CP.saveDoll(b) }); }
     if (p === '/api/companion/clear' && req.method === 'POST') { CP.clear(); return send(res, 200, { ok: true }); }
     if (p === '/api/companion/say' && req.method === 'POST') {
       /* one turn: his line goes into the history, the PC model gets the recent conversation; no filters, PC only */

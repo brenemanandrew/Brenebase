@@ -22,17 +22,30 @@ export function convo({ id, name, close }) {
   else { const c = { id: Math.random().toString(36).slice(2, 8), name: String(name || 'New').slice(0, 30), history: [] }; db.convos.push(c); db.current = c.id; }
   save(); return state();
 }
-export function setup(s) {
+/* a doll's look and reactions, checked: only known fields, known words, numbers 0..1 (the doll skill, skills/doll.md, uses the same rules) */
+export function cleanLook(src) {
+  const s = { look: src || {} };
   const hex = v => /^#[0-9a-f]{6}$/i.test(v || '') ? v : undefined;
   const look = {}; for (const k of ['skin', 'hair', 'iris', 'top', 'shirt', 'bottom', 'shoes', 'bg1', 'bg2', 'lip']) { const v = hex(s.look && s.look[k]); if (v) look[k] = v; }
-  /* styles and body shape; always dressed, so only these choices exist */
   const pick = (k, list) => { const v = s.look && s.look[k]; if (list.includes(v)) look[k] = v; };
   pick('hairStyle', LOOKS.hairStyle); pick('topStyle', LOOKS.topStyle); pick('bottomStyle', LOOKS.bottomStyle); pick('shoeStyle', LOOKS.shoeStyle);
-  for (const k of ['shoulders', 'bust', 'waist', 'hips', 'thighs', 'arms', 'legs', 'bounce']) { const v = s.look && +s.look[k]; if (Number.isFinite(v)) look[k] = Math.max(0, Math.min(1, v)); }
+  for (const k of ['shoulders', 'bust', 'waist', 'hips', 'thighs', 'arms', 'legs', 'bounce']) { const v = s.look && s.look[k] != null && s.look[k] !== '' ? +s.look[k] : NaN; if (Number.isFinite(v)) look[k] = Math.max(0, Math.min(1, v)); }
   if (s.look && s.look.glasses != null) look.glasses = !!s.look.glasses;
-  /* his reactions per part of her body: what her face does, what she does, what she says, what is sent to her as his action. Kept as he wrote them. */
+  return look;
+}
+export function cleanReactions(src) {
   const reactions = {};
-  for (const z of ZONES) { const r = s.reactions && s.reactions[z]; if (!r) continue; const o = { face: String(r.face || '').slice(0, 20), move: String(r.move || '').slice(0, 20), say: String(r.say || '').slice(0, 300), send: String(r.send || '').slice(0, 600) }; if (o.face || o.move || o.say || o.send) reactions[z] = o; }
+  for (const z of ZONES) { const r = src && src[z]; if (!r) continue; const o = { face: String(r.face || '').slice(0, 20), move: String(r.move || '').slice(0, 20), say: String(r.say || '').slice(0, 300), send: String(r.send || '').slice(0, 600) }; if (o.face || o.move || o.say || o.send) reactions[z] = o; }
+  return reactions;
+}
+/* saved dolls: looks he made or the doll skill made, to load into the editor */
+export const dolls = () => db.dolls || [];
+export function saveDoll(d) { db.dolls = (db.dolls || []).filter(x => x.name !== d.name); db.dolls.push({ name: String(d.name || 'Doll').slice(0, 40), look: cleanLook(d.look), reactions: cleanReactions(d.reactions), at: Date.now() }); db.dolls = db.dolls.slice(-60); save(); return db.dolls; }
+export function dropDoll(name) { db.dolls = (db.dolls || []).filter(x => x.name !== name); save(); return db.dolls; }
+export function setup(s) {
+  const look = cleanLook(s.look);
+  /* his reactions per part of her body: what her face does, what she does, what she says, what is sent to her as his action. Kept as he wrote them. */
+  const reactions = cleanReactions(s.reactions);
   const imageReader = ['pc', 'claude'].includes(s.imageReader) ? s.imageReader : (db.setup && db.setup.imageReader) || 'pc';
   db.setup = { name: String(s.name || 'Companion').slice(0, 40), about: String(s.about || '').slice(0, 2000), voice: /^[a-z]{2}_[a-z]+$/.test(s.voice || '') ? s.voice : 'af_heart', speak: !!s.speak, look, reactions, imageReader, at: Date.now() };
   save(); return db.setup;

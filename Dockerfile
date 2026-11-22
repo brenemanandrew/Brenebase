@@ -12,5 +12,6 @@ COPY public ./public
 COPY worker ./worker
 COPY pc ./pc
 COPY projects ./projects
+COPY skills ./skills
 ENV DATA_DIR=/data PORT=8080
 CMD ["/app/start.sh"]

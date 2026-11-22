@@ -62,6 +62,15 @@ export const TOOLS = [
     },
   },
   {
+    id: 'doll', type: 'make3d', name: 'Doll', runsOn: 'pc', backend: 'doll',
+    what: 'Makes or edits a cartoon doll like the companion (hair, clothes, colours, body shape, reactions) with the doll skill on your PC model. No cloud model. Nothing is kept until you open it and Save.',
+    built: ['skills/doll.md (the doll skill)', 'public/companion-avatar.js (the drawing)'],
+    modes: {
+      edit: { label: 'Change the companion', does: 'Changes the companion: "give her red hair and a sundress".', words: ['give her', 'change her', 'make her', 'her hair', 'her outfit', 'dress her', 'companion look', 'her look', 'when i tap'] },
+      new:  { label: 'New doll', does: 'Makes a new doll from a description and keeps it in your saved dolls when you Save.', words: ['new doll', 'make a doll', 'doll of', 'make a character doll'] },
+    },
+  },
+  {
     id: 'companion', type: 'think', name: 'Companion', runsOn: 'pc', backend: 'pc-model',
     what: 'Your PC model (the Wizra brain). Nothing leaves the PC. Vent, rage, roleplay, think out loud.',
     built: ['brenai/bridge/wizra-bridge.mjs (PC model through Bionic on port 1234)', 'brenai persona and memory'],

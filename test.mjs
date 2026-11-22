@@ -65,6 +65,8 @@ SPLIT.push(
   ['"draw 2 pictures" is not the overtime draw (no work project)', !PJx.match('write a story about a lighthouse keeper and draw 2 pictures')],
   ['a Hubbell request is private, so only the PC model plans it', isPrivate('Hubbell: kaizen ideas', { tags: TG2.read('Hubbell: kaizen ideas') })],
   ['with no model free, Go still splits by the rules', (await think('write a story about a lighthouse keeper and draw 2 pictures of the lighthouse', {})).parts.length === 2],
+  ['"give her red hair and a sundress" goes to the Doll tool', (await import('./route.mjs')).ruleRoute('give her red hair and a sundress').pick.tool === 'doll'],
+  ['the doll check drops unknown fields and words', (L => L.hairStyle === 'bob' && L.hat === undefined && L.bust === undefined && L.hips === 1)((await import('./companion.mjs')).cleanLook({ hairStyle: 'bob', hat: 'red', bust: 'lots', hips: 4 }))],
   ['an add-on like "2 images" stays with its request', vet('a lighthouse at sunset, 2 images').parts.length === 1 && vet('a lighthouse at sunset, 2 images').parts[0].tool === 'image'],
   ['tag sets the project (Hubbell -> work)', v1.tags.project === 'work'],
   ['whole statement vetted into 3 parts', v1.suggest === 'parts' && v1.parts.map(p => p.tool).join() === 'coder,expert,companion'],
