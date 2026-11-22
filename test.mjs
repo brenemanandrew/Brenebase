@@ -57,6 +57,7 @@ const v1 = vet('Hubbell: fix the bug where the kiosk shows the old build, plan t
 const v2 = vet('SUI: the bag frame overlaps the minimap');
 const v3 = vet('Note: buy milk');
 SPLIT.push(
+  ['an add-on like "2 images" stays with its request', vet('a lighthouse at sunset, 2 images').parts.length === 1 && vet('a lighthouse at sunset, 2 images').parts[0].tool === 'image'],
   ['tag sets the project (Hubbell -> work)', v1.tags.project === 'work'],
   ['whole statement vetted into 3 parts', v1.suggest === 'parts' && v1.parts.map(p => p.tool).join() === 'coder,expert,companion'],
   ['SUI tag -> sui project, tag removed from text', v2.tags.project === 'sui' && !/SUI/.test(v2.tags.rest)],

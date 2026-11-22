@@ -136,6 +136,13 @@ const IMG_DIR = path.join(process.env.DATA_DIR || './data', 'images');
 function dress(j) {
   const o = { ...j, report: report(j) };
   if (j.status === 'running' || j.status === 'queued') o.elapsed = Math.round((Date.now() - (j.startedAt || j.at)) / 1000);
+  if (j.backend === 'parts' && j.children) {
+    /* a parts card is as far along as its parts, and its report lists them */
+    const kids = j.children.map(id => L.get(id)).filter(Boolean);
+    o.status = kids.some(k => k.status === 'failed') && kids.every(k => ['done', 'failed', 'cancelled'].includes(k.status)) ? 'failed' : kids.every(k => ['done', 'cancelled'].includes(k.status)) ? 'done' : kids.some(k => ['waiting', 'waiting-answer', 'held'].includes(k.status)) && !kids.some(k => ['queued', 'running', 'ready'].includes(k.status)) ? 'waiting' : 'running';
+    o.report = { done: kids.map(k => `${k.label}: ${k.status}${k.status === 'done' && k.result && k.result.images ? ` (${k.result.images.length} picture(s))` : ''}`), tested: [], notTested: [], blocked: kids.filter(k => k.status === 'failed').map(k => `${k.label}: ${String(k.error || '').split('\n')[0].slice(0, 200)}`), next: [o.status === 'done' ? 'Open the parts below, or the results window, to see each result.' : o.status === 'failed' ? 'Open the failed part and tap Retry.' : 'Still working: the parts update by themselves.'] };
+    o.partJobs = kids.map(dress);
+  }
   if (j.children) { const kids = j.children.map(id => L.get(id)).filter(Boolean); o.parts = { done: kids.filter(k => k.status === 'done').length, failed: kids.filter(k => k.status === 'failed').length, waiting: kids.filter(k => ['waiting', 'held', 'waiting-answer'].includes(k.status)).length, running: kids.filter(k => ['queued', 'running', 'ready'].includes(k.status)).length, total: kids.length }; }
   return o;
 }

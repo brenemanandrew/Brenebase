@@ -189,6 +189,7 @@ function jobCard(j) {
   ${j.status === 'queued' && j.prompt ? `<details><summary class="dim">What goes to Claude Code</summary><pre>${esc(j.prompt)}</pre></details>` : ''}
   ${r.audio ? `<audio controls src="${esc(r.audio)}" style="width:100%;margin-top:6px"></audio>` : ''}
   ${output}
+  ${j.partJobs ? `<details${j.status !== 'done' ? ' open' : ''}><summary class="dim">The parts</summary>${j.partJobs.map(jobCard).join('')}</details>` : ''}
   <div class="row">${btns}<button class="sm" onclick="checkJob('${j.id}', this)">Check status</button>${j.status === 'failed' ? `<button class="sm" onclick="retryJob('${j.id}')">Retry</button>` : ''}${j.status === 'done' && r.text ? `<button class="sm" onclick="speak('${j.id}', this)">&#128266; Read aloud</button>` : ''}</div></div>`;
 }
 /* ---- talk to text: tap to start, it keeps listening (and restarts after pauses) until tapped off ---- */

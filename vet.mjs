@@ -15,6 +15,9 @@ export function vet(text) {
   const cs = clauses(tg.rest).map(c => c.text).filter(Boolean);
   const groups = [];
   for (const c of cs) {
+    /* add-ons ("2 images", "16:9", "in anime style", "realistic") belong to the request before them */
+    const addOn = /^(\d{1,2}\s*(images?|pictures?|pics?|versions?|renders?|variations?|of them)|\d+:\d+|(in\s+)?(an?\s+)?(anime|realistic|cel[- ]?shaded|portrait|landscape|square|wide|tall)(\s+(style|version|format|one))?|please|thanks?|asap|high quality|hd|4k)$/i.test(c.trim()) || c.trim().split(/\s+/).length <= 2;
+    if (addOn && groups.length) { groups[groups.length - 1].text.push(c); continue; }
     const r = ruleRoute(c);
     const strong = r.pick && r.confidence > 0;
     const key = strong ? r.pick.tool : null;
@@ -28,6 +31,8 @@ export function vet(text) {
   /* merge neighbours that ended on the same tool, drop empty tools onto the planner as the safe default */
   const merged = [];
   for (const g of groups) { const l = merged[merged.length - 1]; if (l && l.tool === g.tool) l.text.push(...g.text); else merged.push({ ...g }); }
+  /* route each part again on its whole text (an add-on like "2 images" can change what it is) */
+  for (const g of merged) { const r2 = ruleRoute(g.text.join('. ')); if (r2.pick && r2.confidence > 0) { g.tool = r2.pick.tool; g.mode = r2.pick.mode; g.why = r2.why; } }
   const parts = merged.map(g => { const r = resolve(g.tool || 'planner', g.mode); return { tool: r.tool, mode: r.mode, label: r.label, text: g.text.join('. '), why: g.why }; });
   const gp = plan(tg.rest);
   const game = gp.mechanics.length && (gp.art.length || gp.story.length) && parts.some(p => p.tool === 'coder' || p.tool === 'make3d');
