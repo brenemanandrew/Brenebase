@@ -44,6 +44,7 @@ h3{margin:18px 0 6px}.mode{margin:4px 0 4px 10px}
 
 <section id="send">
   <div id="now"></div>
+  <div class="pills" id="sendProj" style="flex-wrap:nowrap;overflow-x:auto;margin:0 0 8px"></div>
   <textarea id="thought" placeholder="Say or type what you want. Brenebase works out the parts and where each goes."></textarea>
   <div id="heard" class="dim" style="min-height:1.2em;font-style:italic"></div>
   <div class="bigrow"><button class="go" id="micBtn" title="Talk to text" style="background:var(--card);color:var(--text);border:1px solid var(--line)">&#127908; Talk</button><button class="go" id="goBtn">Go &#9656;</button></div>
@@ -154,7 +155,13 @@ $('tool').onchange = () => fillModes(); $('mode').onchange = showDoes;
 
 let routed = null;
 /* ---- Go: Brenebase thinks about the whole request, shows the plan, Run sends it ---- */
-let PLAN = null;
+let PLAN = null, SENDPJ = localStorage.getItem('sendProj') || '';
+/* the project you are working in: everything sent from here uses it (its rules, what is known, private stays local) */
+function sendProjPills() {
+  const list = PJS_ALL || []; if (SENDPJ && !list.some(c => c.id === SENDPJ)) SENDPJ = '';
+  $('sendProj').innerHTML = `<button data-p="" class="${!SENDPJ ? 'on' : ''}">Any project</button>` + list.map(c => `<button data-p="${c.id}" class="${SENDPJ === c.id ? 'on' : ''}" style="white-space:nowrap">${esc(c.name.split(' (')[0])}</button>`).join('');
+  $('sendProj').querySelectorAll('button').forEach(b => b.onclick = () => { SENDPJ = b.dataset.p; localStorage.setItem('sendProj', SENDPJ); sendProjPills(); if ($('proj')) $('proj').value = SENDPJ; });
+}
 const toolOpts = sel => CAT ? CAT.tools.map(t => Object.entries(t.modes).map(([k, m]) => `<option value="${t.id}/${k}"${sel === t.id + '/' + k ? ' selected' : ''}>${esc(t.name)}: ${esc(m.label)}</option>`).join('')).join('') : '';
 function drawPlan() {
   if (!PLAN) { $('planBox').innerHTML = ''; return; }
@@ -178,7 +185,7 @@ function drawPlan() {
   $('runPlan').onclick = async () => {
     $('runPlan').disabled = true; $('runPlan').textContent = 'Sending...';
     const parts = PLAN.parts.filter(p => p.text.trim());
-    const base = { text: $('thought').value || PLAN.summary, project: PLAN.project ? PLAN.project.id : undefined, area: undefined, autonomy: 'draft', repo: PLAN.tags && PLAN.tags.repo, thread: TAB || undefined };
+    const base = { text: $('thought').value || PLAN.summary, project: SENDPJ || (PLAN.project ? PLAN.project.id : undefined), area: undefined, autonomy: 'draft', repo: PLAN.tags && PLAN.tags.repo, thread: TAB || undefined };
     const j = parts.length === 1 ? await api('/api/jobs', { ...base, text: parts[0].text, tool: parts[0].tool, mode: parts[0].mode }) : await api('/api/jobs/parts', { ...base, parts });
     $('last').innerHTML = jobCard(j); PLAN = null; drawPlan(); $('thought').value = ''; nowStrip();
   };
@@ -186,7 +193,7 @@ function drawPlan() {
 $('goBtn').onclick = async () => {
   const text = $('thought').value.trim(); if (!text) return;
   $('goBtn').disabled = true; $('goBtn').textContent = 'Thinking...'; $('pick').style.display = 'none'; $('splitBox').style.display = 'none';
-  try { PLAN = await api('/api/think', { text, thread: TAB || undefined }); if (PLAN.error) { $('planBox').innerHTML = `<p class="st-failed">${esc(PLAN.error)}</p>`; PLAN = null; } else drawPlan(); }
+  try { PLAN = await api('/api/think', { text, thread: TAB || undefined, project: SENDPJ || undefined }); if (PLAN.error) { $('planBox').innerHTML = `<p class="st-failed">${esc(PLAN.error)}</p>`; PLAN = null; } else drawPlan(); }
   finally { $('goBtn').disabled = false; $('goBtn').innerHTML = 'Go &#9656;'; }
 };
 /* what is going on, at the top of Send: tap to jump */
@@ -301,16 +308,19 @@ if (!SR) $('micBtn').title = 'Talk to text needs Chrome, Edge or Safari';
 /* ---- companion: his own chat partner on the PC model, with the avatar he set up (Brenai's cartoon puppet) ---- */
 const CP_COLORS = [['skin', 'Skin', '#f4ecef'], ['hair', 'Hair', '#0b0b10'], ['iris', 'Eyes', '#3b2f4f'], ['lip', 'Lips', '#4a1f3a'], ['top', 'Top', '#2a2234'], ['shirt', 'Inner', '#e6dbe0'], ['bottom', 'Bottom', '#2b3550'], ['shoes', 'Shoes', '#1c1a22'], ['bg1', 'Light', '#8a5bb8'], ['bg2', 'Shadow', '#2a1b4d']];
 const CP_STYLES = { hairStyle: [['long', 'Long'], ['wavy', 'Wavy'], ['bob', 'Bob'], ['ponytail', 'Ponytail'], ['twintails', 'Twin tails'], ['bun', 'Bun'], ['pixie', 'Pixie']], topStyle: [['hoodie', 'Hoodie'], ['tee', 'Tee'], ['tank', 'Tank'], ['sweater', 'Sweater'], ['blouse', 'Blouse'], ['crop', 'Crop top'], ['dress', 'Dress']], bottomStyle: [['jeans', 'Jeans'], ['leggings', 'Leggings'], ['skirt', 'Skirt'], ['shorts', 'Shorts']], shoeStyle: [['boots', 'Boots'], ['sneakers', 'Sneakers'], ['flats', 'Flats']] };
-const CP_SHAPE = [['shoulders', 'Shoulders'], ['bust', 'Bust'], ['waist', 'Waist'], ['hips', 'Hips'], ['legs', 'Legs'], ['bounce', 'Bounce']];
+const CP_SHAPE = [['shoulders', 'Shoulders'], ['arms', 'Arms'], ['bust', 'Bust'], ['waist', 'Waist'], ['hips', 'Hips'], ['thighs', 'Thighs'], ['legs', 'Leg length'], ['bounce', 'Bounce']];
+const CP_ZONES = [['hair', 'Hair / top of head'], ['face', 'Face'], ['nose', 'Nose'], ['shoulders', 'Shoulders'], ['arms', 'Arms'], ['hands', 'Hands'], ['chest', 'Chest'], ['belly', 'Belly'], ['hips', 'Hips'], ['legs', 'Legs'], ['feet', 'Feet']];
+const CP_FACES = ['', 'happy', 'joy', 'playful', 'blush', 'surprised', 'suspicious', 'grumpy', 'angry', 'sad', 'anxious', 'excited', 'tired', 'chill', 'eyeroll', 'thinking', 'flinch', 'dizzy', 'neutral'];
+const CP_MOVES = ['', 'wave', 'fingerwave', 'cheer', 'stretch', 'crossarms', 'hips', 'shrug', 'clap', 'peace', 'kiss', 'facepalm', 'dance', 'hair', 'nod', 'shake', 'jolt', 'bounce', 'jump', 'laugh', 'tilt', 'flip', 'lookaway', 'lookdown', 'shift', 'cringe', 'bow'];
 const CP_MODES = [['chat', 'Just talk'], ['vent', 'Vent'], ['roleplay', 'Roleplay'], ['coach', 'Coach']];
 const CP_VOICES = ['af_heart', 'af_bella', 'af_nicole', 'af_sarah', 'af_sky', 'af_nova', 'af_river', 'af_jessica', 'af_kore', 'af_aoede', 'am_michael', 'am_fenrir', 'am_puck', 'am_echo', 'am_eric', 'am_liam', 'am_onyx', 'am_adam', 'bf_emma', 'bf_isabella', 'bf_lily', 'bm_george', 'bm_fable', 'bm_lewis', 'bm_daniel'];
 let CP = null, cpAv = null, cpMode = localStorage.getItem('cpMode') || 'chat', cpSeen = 0, cpTimer = 0, cpDraft = null, cpPic = null;
-function cpLoadAvatar(look, el, view) { return new Promise(ok => { window.COMPANION_LOOK = look || {}; const go = () => { const av = window.CompanionAvatar.mount(el, { onPortraitTap: () => cpFullOpen() }); if (view) av.view(view); ok(av); }; if (window.CompanionAvatar) return go(); const sc = document.createElement('script'); sc.src = '/companion-avatar.js?v=2'; sc.onload = go; document.head.appendChild(sc); }); }
+function cpLoadAvatar(look, el, view) { return new Promise(ok => { window.COMPANION_LOOK = look || {}; const go = () => { window.COMPANION_REACT = $('cpSetup').style.display !== 'none' && cpDraft ? cpDraft.reactions : (CP && CP.setup && CP.setup.reactions) || {}; const av = window.CompanionAvatar.mount(el, { onPortraitTap: () => cpFullOpen(), onTouch: (zone, mine) => { if (mine && mine.send && CP && CP.setup && $('cpChat').style.display !== 'none') api('/api/companion/say', { text: mine.send, mode: cpMode }).then(() => cpPoll()); } }); if (view) av.view(view); ok(av); }; if (window.CompanionAvatar) return go(); const sc = document.createElement('script'); sc.src = '/companion-avatar.js?v=2'; sc.onload = go; document.head.appendChild(sc); }); }
 /* the look editor: every change redraws the preview; Save keeps it */
 async function cpSetupView(editing) {
   cpFullClose(); $('cpChat').style.display = 'none'; $('cpSetup').style.display = ''; $('cpCancel').style.display = editing ? '' : 'none'; $('cpStage').textContent = ''; cpAv = null;
   const S = (CP && CP.setup) || {};
-  cpDraft = { name: S.name || '', about: S.about || '', voice: S.voice || 'af_heart', speak: !!S.speak, imageReader: S.imageReader || 'pc', look: Object.assign({ hairStyle: 'long', topStyle: 'hoodie', bottomStyle: 'jeans', shoeStyle: 'boots', glasses: false, shoulders: 0.5, bust: 0.5, waist: 0.5, hips: 0.5, legs: 0.5, bounce: 0.5 }, Object.fromEntries(CP_COLORS.map(([k, , d]) => [k, d])), S.look || {}) };
+  cpDraft = { name: S.name || '', about: S.about || '', voice: S.voice || 'af_heart', speak: !!S.speak, imageReader: S.imageReader || 'pc', reactions: JSON.parse(JSON.stringify(S.reactions || {})), look: Object.assign({ hairStyle: 'long', topStyle: 'hoodie', bottomStyle: 'jeans', shoeStyle: 'boots', glasses: false, shoulders: 0.5, bust: 0.5, waist: 0.5, hips: 0.5, thighs: 0.5, arms: 0.5, legs: 0.5, bounce: 0.5 }, Object.fromEntries(CP_COLORS.map(([k, , d]) => [k, d])), S.look || {}) };
   $('cpSetupTitle').textContent = editing ? 'Edit your companion' : 'Set up your companion';
   const L = cpDraft.look;
   const pills = k => `<div class="pills">${CP_STYLES[k].map(([v, n]) => `<button data-k="${k}" data-v="${v}" class="${L[k] === v ? 'on' : ''}">${n}</button>`).join('')}</div>`;
@@ -324,6 +334,11 @@ async function cpSetupView(editing) {
     <h4>Body</h4>${CP_SHAPE.map(([k, n]) => `<div class="sl"><span>${n}</span><input type="range" min="0" max="1" step="0.05" data-s="${k}" value="${L[k]}"></div>`).join('')}
     <h4>Face</h4><div class="cols">${col('skin')}${col('iris')}${col('lip')}</div><div class="pills"><button data-g="1" class="${L.glasses ? 'on' : ''}">Glasses</button></div>
     <h4>Background</h4><div class="cols">${col('bg1')}${col('bg2')}</div>
+    <h4>Reactions</h4><div class="dim" style="font-size:13px">What she does when you tap each part of her in the full view. Leave a part empty for her usual reaction.</div>
+    ${CP_ZONES.map(([z, n]) => { const r = cpDraft.reactions[z] || {}; return `<details style="margin:4px 0"><summary>${n}${r.face || r.move || r.say || r.send ? ' &#9679;' : ''}</summary>
+      <div class="row" style="margin:4px 0"><select data-r="${z}" data-f="face">${CP_FACES.map(f => `<option value="${f}"${r.face === f ? ' selected' : ''}>${f ? 'Face: ' + f : 'Face: usual'}</option>`).join('')}</select><select data-r="${z}" data-f="move">${CP_MOVES.map(f => `<option value="${f}"${r.move === f ? ' selected' : ''}>${f ? 'Does: ' + f : 'Does: usual'}</option>`).join('')}</select></div>
+      <input type="text" data-r="${z}" data-f="say" placeholder="She says (shown in a bubble)" value="${esc(r.say || '')}" style="padding:7px;border-radius:8px;border:1px solid var(--line);background:#0f1116;color:var(--text);margin:3px 0">
+      <input type="text" data-r="${z}" data-f="send" placeholder="Sent to her as your action, so she answers (optional)" value="${esc(r.send || '')}" style="padding:7px;border-radius:8px;border:1px solid var(--line);background:#0f1116;color:var(--text);margin:3px 0"></details>`; }).join('')}
     <h4>Who she is</h4><textarea id="cpAbout" placeholder="Who she is, how she talks, anything she should know about you (optional)" style="min-height:70px">${esc(cpDraft.about)}</textarea>
     <h4>Voice</h4><div class="row" style="margin:4px 0"><select id="cpVoice">${CP_VOICES.map(v => `<option${cpDraft.voice === v ? ' selected' : ''}>${v}</option>`).join('')}</select><label class="dim"><input type="checkbox" id="cpSpeak"${cpDraft.speak ? ' checked' : ''}> read replies aloud</label></div>
     <h4>Pictures you send her</h4><select id="cpReader"><option value="pc"${cpDraft.imageReader === 'pc' ? ' selected' : ''}>Read on your PC (needs a vision model in LM Studio)</option><option value="claude"${cpDraft.imageReader === 'claude' ? ' selected' : ''}>Read by Claude (the picture goes to Claude)</option></select>
@@ -332,6 +347,7 @@ async function cpSetupView(editing) {
   E.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { L[b.dataset.k] = b.dataset.v; E.querySelectorAll(`[data-k="${b.dataset.k}"]`).forEach(x => x.classList.toggle('on', x === b)); redraw(); });
   E.querySelectorAll('[data-c]').forEach(i => i.oninput = () => { L[i.dataset.c] = i.value; redraw(); });
   E.querySelectorAll('[data-s]').forEach(i => i.oninput = () => { L[i.dataset.s] = +i.value; redraw(); });
+  E.querySelectorAll('[data-r]').forEach(i => (i.oninput = i.onchange = () => { (cpDraft.reactions[i.dataset.r] ||= {})[i.dataset.f] = i.value; }));
   E.querySelector('[data-g]').onclick = e => { L.glasses = !L.glasses; e.target.classList.toggle('on', L.glasses); redraw(); };
   redraw();
 }
@@ -374,7 +390,7 @@ async function companion() {
   if ($('cpChat').style.display === 'none' && $('cpSetup').style.display !== 'none' && $('cpCancel').style.display !== 'none') return;
   cpSeen = (CP.history || []).length; await cpChatView();
 }
-$('cpSave').onclick = async () => { const d = cpDraft; await api('/api/companion/setup', { name: $('cpName').value || 'Companion', about: $('cpAbout').value, voice: $('cpVoice').value, speak: $('cpSpeak').checked, imageReader: $('cpReader').value, look: d.look }); CP = await api('/api/companion'); cpChatView(); };
+$('cpSave').onclick = async () => { const d = cpDraft; await api('/api/companion/setup', { name: $('cpName').value || 'Companion', about: $('cpAbout').value, voice: $('cpVoice').value, speak: $('cpSpeak').checked, imageReader: $('cpReader').value, look: d.look, reactions: d.reactions }); CP = await api('/api/companion'); cpChatView(); };
 $('cpCancel').onclick = () => cpChatView();
 $('cpEdit').onclick = () => cpSetupView(true);
 $('cpVoiceT').onclick = async () => { const S = CP.setup; await api('/api/companion/setup', { ...S, speak: !S.speak }); CP = await api('/api/companion'); cpIcons(); };
@@ -546,7 +562,7 @@ async function boot() {
   CAT = await api('/api/catalogue');
   pc(true).catch(() => {});
   $('tool').innerHTML = CAT.tools.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
-  const PJS = (await api('/api/projects')).projects.filter(c => !c.archived); PJS_ALL = PJS; await tabs(); tabApply(); $('proj').innerHTML = '<option value="">No project</option>' + PJS.map(c => `<option value="${c.id}">${esc(c.name.split(' (')[0])}</option>`).join('');
+  const PJS = (await api('/api/projects')).projects.filter(c => !c.archived); PJS_ALL = PJS; sendProjPills(); await tabs(); tabApply(); $('proj').innerHTML = '<option value="">No project</option>' + PJS.map(c => `<option value="${c.id}">${esc(c.name.split(' (')[0])}</option>`).join('');
   $('area').innerHTML = Object.entries(CAT.areas).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('');
   $('autonomy').innerHTML = Object.entries(CAT.autonomy).map(([k, v]) => `<option value="${k}"${k === 'draft' ? ' selected' : ''}>${k}</option>`).join('');
   const ad = () => $('autoDoes').textContent = CAT.autonomy[$('autonomy').value]; $('autonomy').onchange = ad; ad();

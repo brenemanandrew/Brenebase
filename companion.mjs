@@ -13,6 +13,7 @@ const cur = () => db.convos.find(c => c.id === db.current) || db.convos[0];
 const save = () => { fs.mkdirSync(path.dirname(FILE), { recursive: true }); fs.writeFileSync(FILE, JSON.stringify(db, null, 1)); };
 
 export const MODES = ['chat', 'vent', 'roleplay', 'coach'];
+export const ZONES = ['hair', 'face', 'nose', 'shoulders', 'arms', 'hands', 'chest', 'belly', 'hips', 'legs', 'feet'];
 export const LOOKS = { hairStyle: ['long', 'wavy', 'bob', 'ponytail', 'twintails', 'bun', 'pixie'], topStyle: ['hoodie', 'tee', 'tank', 'sweater', 'blouse', 'crop', 'dress'], bottomStyle: ['jeans', 'leggings', 'skirt', 'shorts'], shoeStyle: ['boots', 'sneakers', 'flats'] };
 export function state(n = 80) { const c = cur(); return { setup: db.setup, convos: db.convos.filter(x => !x.closed).map(x => ({ id: x.id, name: x.name })), current: c.id, history: c.history.slice(-n) }; }
 export function convo({ id, name, close }) {
@@ -27,10 +28,13 @@ export function setup(s) {
   /* styles and body shape; always dressed, so only these choices exist */
   const pick = (k, list) => { const v = s.look && s.look[k]; if (list.includes(v)) look[k] = v; };
   pick('hairStyle', LOOKS.hairStyle); pick('topStyle', LOOKS.topStyle); pick('bottomStyle', LOOKS.bottomStyle); pick('shoeStyle', LOOKS.shoeStyle);
-  for (const k of ['shoulders', 'bust', 'waist', 'hips', 'legs', 'bounce']) { const v = s.look && +s.look[k]; if (Number.isFinite(v)) look[k] = Math.max(0, Math.min(1, v)); }
+  for (const k of ['shoulders', 'bust', 'waist', 'hips', 'thighs', 'arms', 'legs', 'bounce']) { const v = s.look && +s.look[k]; if (Number.isFinite(v)) look[k] = Math.max(0, Math.min(1, v)); }
   if (s.look && s.look.glasses != null) look.glasses = !!s.look.glasses;
+  /* his reactions per part of her body: what her face does, what she does, what she says, what is sent to her as his action. Kept as he wrote them. */
+  const reactions = {};
+  for (const z of ZONES) { const r = s.reactions && s.reactions[z]; if (!r) continue; const o = { face: String(r.face || '').slice(0, 20), move: String(r.move || '').slice(0, 20), say: String(r.say || '').slice(0, 300), send: String(r.send || '').slice(0, 600) }; if (o.face || o.move || o.say || o.send) reactions[z] = o; }
   const imageReader = ['pc', 'claude'].includes(s.imageReader) ? s.imageReader : (db.setup && db.setup.imageReader) || 'pc';
-  db.setup = { name: String(s.name || 'Companion').slice(0, 40), about: String(s.about || '').slice(0, 2000), voice: /^[a-z]{2}_[a-z]+$/.test(s.voice || '') ? s.voice : 'af_heart', speak: !!s.speak, look, imageReader, at: Date.now() };
+  db.setup = { name: String(s.name || 'Companion').slice(0, 40), about: String(s.about || '').slice(0, 2000), voice: /^[a-z]{2}_[a-z]+$/.test(s.voice || '') ? s.voice : 'af_heart', speak: !!s.speak, look, reactions, imageReader, at: Date.now() };
   save(); return db.setup;
 }
 export function add(who, text, extra = {}) { const c = (extra.convo && db.convos.find(x => x.id === extra.convo)) || cur(); c.history.push({ who, text: String(text).slice(0, 8000), at: Date.now(), ...extra }); c.history = c.history.slice(-400); save(); }

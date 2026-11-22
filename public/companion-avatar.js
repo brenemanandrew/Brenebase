@@ -17,15 +17,15 @@
      Brenai's cartoon avatar (brenai/public/avatar.js) with its colours made settable. */
   /* the look: colours, hairstyle, clothes, body shape and bounce. Always dressed. */
   const DEF = { skin: '#f4ecef', hair: '#0b0b10', lip: '#4a1f3a', iris: '#3b2f4f', top: '#2a2234', shirt: '#e6dbe0', bottom: '#2b3550', shoes: '#1c1a22', bg1: '#8a5bb8', bg2: '#2a1b4d',
-    hairStyle: 'long', topStyle: 'hoodie', bottomStyle: 'jeans', shoeStyle: 'boots', glasses: false, shoulders: 0.5, bust: 0.5, waist: 0.5, hips: 0.5, legs: 0.5, bounce: 0.5 };
-  const LK = () => { const L = Object.assign({}, DEF, window.COMPANION_LOOK || {}); L.top2 = L.top; for (const k of ['shoulders', 'bust', 'waist', 'hips', 'legs', 'bounce']) L[k] = Math.max(0, Math.min(1, +L[k])); return L; };
+    hairStyle: 'long', topStyle: 'hoodie', bottomStyle: 'jeans', shoeStyle: 'boots', glasses: false, shoulders: 0.5, bust: 0.5, waist: 0.5, hips: 0.5, thighs: 0.5, arms: 0.5, legs: 0.5, bounce: 0.5 };
+  const LK = () => { const L = Object.assign({}, DEF, window.COMPANION_LOOK || {}); L.top2 = L.top; for (const k of ['shoulders', 'bust', 'waist', 'hips', 'thighs', 'arms', 'legs', 'bounce']) L[k] = Math.max(0, Math.min(1, +L[k])); return L; };
   const INK = '#111';
   const shade = (hex, f) => { const n = parseInt(hex.slice(1), 16); const c = [n >> 16, (n >> 8) & 255, n & 255].map(v => Math.max(0, Math.min(255, Math.round(v * f)))); return '#' + c.map(v => v.toString(16).padStart(2, '0')).join(''); };
   /* body measurements from the sliders (puppet space: head centre 100,96; feet near y 470) */
   const BODY = L => {
     const sh = 28 + L.shoulders * 10, bust = L.bust, w = 15 + L.waist * 9, h = 25 + L.hips * 13, leg = 0.92 + L.legs * 0.16;
     const hipY = 270, kneeY = hipY + 86 * leg, ankY = kneeY + 84 * leg;
-    return { sh, bust, w, h, hipY, kneeY, ankY, footY: ankY + 12, crotchY: hipY + 20, chestY: 190, waistY: 236 };
+    return { sh, bust, w, h, th: 0.85 + L.thighs * 0.35, ar: 0.85 + L.arms * 0.35, hipY, kneeY, ankY, footY: ankY + 12, crotchY: hipY + 20, chestY: 190, waistY: 236 };
   };
   const TOPS = { hoodie: { end: 280, sleeve: 'long', neck: 'hood' }, tee: { end: 270, sleeve: 'short', neck: 'crew' }, tank: { end: 266, sleeve: 'none', neck: 'scoop' }, sweater: { end: 284, sleeve: 'long', neck: 'high' }, blouse: { end: 268, sleeve: 'long', neck: 'v' }, crop: { end: 222, sleeve: 'short', neck: 'crew' }, dress: { end: 0, sleeve: 'short', neck: 'scoop' } };
   function torsoPath(B, end, pad = 0) {
@@ -156,7 +156,21 @@
     const VIEWS = { portrait: [0, 0, 200, 200], full: [-10, 18, 220, B.footY + 6] };
     let view = 'portrait'; const setView = v => { view = VIEWS[v] ? v : 'portrait'; svg.setAttribute('viewBox', VIEWS[view].join(' ')); };
     /* arms: blended pose angles; chest and hair tails: springs driven by how the body moves */
-    const arm = { L: [9, -6], R: [9, -6] }; let lastPose = '', armKey = '';
+    const arm = { L: [9, -6], R: [9, -6] }; let lastPose = '', armKey = ''; const joints = {};
+    /* which part of her a point is on (puppet space), for the reactions he sets per body part */
+    const segD = (p, a, b) => { const vx = b[0] - a[0], vy = b[1] - a[1], t = Math.max(0, Math.min(1, ((p.x - a[0]) * vx + (p.y - a[1]) * vy) / (vx * vx + vy * vy || 1))); return Math.hypot(p.x - a[0] - vx * t, p.y - a[1] - vy * t); };
+    function zone(p) {
+      for (const k of ['L', 'R']) { const J = joints[k]; if (!J) continue; if (Math.hypot(p.x - J[2][0], p.y - J[2][1]) < 11) return 'hands'; if (segD(p, J[0], J[1]) < 10 || segD(p, J[1], J[2]) < 9) return 'arms'; }
+      if (Math.hypot(p.x - 100, p.y - 108) < 8) return 'nose';
+      if (((p.x - 100) / 36) ** 2 + ((p.y - 96) / 42) ** 2 < 1) return p.y < 80 ? 'hair' : 'face';
+      if (p.y < 80) return 'hair';
+      if (p.y < 172) return 'shoulders';
+      if (p.y < B.chestY + 18) return 'chest';
+      if (p.y < B.hipY - 12) return 'belly';
+      if (p.y < B.crotchY + 14) return 'hips';
+      if (p.y < B.ankY - 6) return 'legs';
+      return 'feet';
+    }
     const jig = { y: 0, v: 0, x: 0, vx: 0 }, tail = { a: 0, v: 0 }; let prevY = 0, prevV = 0, hop = 0;
     const sleeve = T.sleeve, skin = L.skin, top = L.top;
     function drawArms(t, g) {
@@ -171,8 +185,9 @@
         const sx = 100 + side * (B.sh - 4), sy = 160;
         const ex = sx + side * 60 * Math.sin(a1), ey = sy + 60 * Math.cos(a1);
         const wx = ex + side * 54 * Math.sin(a1 + a2), wy = ey + 54 * Math.cos(a1 + a2);
+        joints[k] = [[sx, sy], [ex, ey], [wx, wy]];
         const mx = sx + (ex - sx) * 0.5, my = sy + (ey - sy) * 0.5;
-        P['arm' + k].innerHTML = limb([[sx, sy], [ex, ey], [wx, wy]], [15, 12], [sleeve === 'long' ? top : skin, sleeve === 'long' ? top : skin]) + (sleeve === 'short' ? limb([[sx, sy], [mx, my]], [19], [top]) : '') + `<circle cx="${(wx + side * 2 * Math.sin(a1 + a2)).toFixed(1)}" cy="${(wy + 2 * Math.cos(a1 + a2)).toFixed(1)}" r="7.5" fill="${skin}" stroke="${INK}" stroke-width="2"/>`;
+        P['arm' + k].innerHTML = limb([[sx, sy], [ex, ey], [wx, wy]], [15 * B.ar, 12 * B.ar], [sleeve === 'long' ? top : skin, sleeve === 'long' ? top : skin]) + (sleeve === 'short' ? limb([[sx, sy], [mx, my]], [19 * B.ar], [top]) : '') + `<circle cx="${(wx + side * 2 * Math.sin(a1 + a2)).toFixed(1)}" cy="${(wy + 2 * Math.cos(a1 + a2)).toFixed(1)}" r="7.5" fill="${skin}" stroke="${INK}" stroke-width="2"/>`;
       }
     }
     function drawLegs() {
@@ -182,7 +197,7 @@
       for (const side of [-1, 1]) {
         const hx = 100 + side * (B.h * 0.5), kx = 100 + side * (B.h * 0.42), ax = 100 + side * (B.h * 0.38);
         if (bs === 'shorts') s += limb([[hx, B.hipY], [hx + (kx - hx) * 0.45, B.hipY + (B.kneeY - B.hipY) * 0.45]], [26], [bot]);
-        s += limb([[hx, B.hipY + 6], [kx, B.kneeY], [ax, B.ankY]], [bs === 'leggings' ? 21 : 23, bs === 'leggings' ? 15 : 17], [legCol(0), legCol(1)]);
+        s += limb([[hx, B.hipY + 6], [kx, B.kneeY], [ax, B.ankY]], [(bs === 'leggings' ? 21 : 23) * B.th, (bs === 'leggings' ? 15 : 17) * (0.6 + B.th * 0.4)], [legCol(0), legCol(1)]);
         if (bs === 'shorts') s += limb([[hx, B.hipY], [hx + (kx - hx) * 0.42, B.hipY + (B.kneeY - B.hipY) * 0.42]], [25], [bot]);
         const sc = L.shoes, fx = ax + side * 5, fy = B.footY - 5;
         if (L.shoeStyle === 'boots') s += `<rect x="${ax - 10}" y="${B.ankY - 34}" width="20" height="38" rx="4" fill="${sc}" stroke="${INK}" stroke-width="2.2"/><ellipse cx="${fx}" cy="${fy}" rx="14" ry="7.5" fill="${sc}" stroke="${INK}" stroke-width="2.2"/><rect x="${ax - 9}" y="${B.ankY - 30}" width="18" height="34" fill="${sc}"/>`;
@@ -194,7 +209,7 @@
     drawLegs(); setView('portrait');
     return {
       locate(e) { const m = svg.getScreenCTM(); if (!m) return { x: 100, y: 100 }; const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; const q = pt.matrixTransform(m.inverse()); return { x: q.x, y: q.y }; },
-      dispose() { wrap.remove(); }, setView, view: () => view,
+      dispose() { wrap.remove(); }, setView, view: () => view, zone,
       presence(mode) { wrap.style.visibility = mode === 'gone' || mode === 'leave' ? 'hidden' : 'visible'; },
       call(on) { wrap.style.visibility = on ? 'visible' : 'hidden'; },
       thumb(cb) { const c = svg.cloneNode(true); c.setAttribute('viewBox', VIEWS.portrait.join(' ')); cb('data:image/svg+xml,' + encodeURIComponent(c.outerHTML)); },
@@ -287,6 +302,9 @@
     let R = puppet(stage);
     const em = document.createElement('div'); em.style.cssText = 'position:absolute;right:8%;top:8%;font-size:calc(var(--emote, 1) * 22px);line-height:1;opacity:0;pointer-events:none;z-index:2;width:auto;height:auto';
     stage.appendChild(em);
+    const say = document.createElement('div'); say.style.cssText = 'position:absolute;left:8%;right:8%;top:4%;background:#fff;color:#111;border:2px solid #111;border-radius:14px;padding:6px 10px;font:600 14px system-ui;text-align:center;opacity:0;transition:opacity .2s;pointer-events:none;z-index:3';
+    stage.appendChild(say); let sayT = 0;
+    function speak(t, ms = 3200) { say.textContent = t; say.style.opacity = 1; clearTimeout(sayT); sayT = setTimeout(() => { say.style.opacity = 0; }, ms); }
     let mood = 'neutral', temp = null, tempUntil = 0, thinking = false, talkUntil = 0, emoteUntil = 0;
     let blinkAt = performance.now() + 2000, blinkEnd = 0, glanceAt = 0, gaze = { x: 0, y: 0 }, look = { x: 0, y: 0 }, pointerLook = null, pointerLookUntil = 0;
     const sp = { rot: { x: 0, v: 0 }, tx: { x: 0, v: 0 }, ty: { x: 0, v: 0 }, sq: { x: 0, v: 0 } }; // springs, rest at 0
@@ -365,6 +383,9 @@
       if (!onHerAt(p) && R.pick) { point(); return; }
       const t = now(); taps.push(t); while (taps.length && t - taps[0] > 2500) taps.shift();
       if (taps.length >= 4) { taps.length = 0; return touched('spam'); }
+      /* his own reaction for this part of her, if he set one (window.COMPANION_REACT: part -> { face, move, say, send }) */
+      const zn = R.zone && R.view && R.view() === 'full' ? R.zone(p) : null, mine = zn && (window.COMPANION_REACT || {})[zn];
+      if (mine && (mine.face || mine.move || mine.say || mine.send)) { if (mine.face && FACE[mine.face]) show(mine.face, 3000); if (mine.move) doGesture(mine.move, 2.4); if (R.jolt) R.jolt(-25); if (mine.say) speak(mine.say); if (opts.onTouch) opts.onTouch(zn, mine); return; }
       if (Math.hypot(p.x - 100, p.y - 108) < 9) return touched('boop');
       if (p.y > 150) return touched('body');
       if (p.y < 80) return touched('pat');
@@ -426,7 +447,7 @@
         let wait = 0; for (const [name, dur] of found.slice(0, 2)) { const hold = dur * (QUICK.has(name) ? 1 : 1.5); setTimeout(() => doGesture(name, hold), wait); wait += hold * 1000 + 1200; }   // each pose is held, then a breath before the next
         return found.map(f => f[0]);
       },
-      gesture: doGesture,
+      gesture: doGesture, speak, faces: () => Object.keys(FACE),
       // whether she is in the room: 'gone' (already out), 'leave' (walks out now), 'return' (walks back in; opts.sneak = quietly)
       presence(mode, o) { if (R.presence) R.presence(mode, o || {}); },
       // a video call while she is out: she appears wherever she really is (scene = the backdrop), until call(false)

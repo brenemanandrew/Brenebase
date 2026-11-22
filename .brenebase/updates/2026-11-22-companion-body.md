@@ -25,3 +25,11 @@ title: Companion full body, look editor, pictures, icon row
 
 ## Open
 - If LM Studio has no vision model she says she cannot see it, with a note on what to download
+
+## Done (later the same day)
+- Send tab: a row of project pills (Any project, then each project). The picked one is used for planning and for the jobs sent, and is remembered
+- Companion reactions per body part (hair, face, nose, shoulders, arms, hands, chest, belly, hips, legs, feet): for each, a face, a move, a line she says in a bubble, and an optional action sent to her so she answers. Stored as Andrew writes them. Used when he taps that part in the full view
+- More body sliders: arms and thighs (with shoulders, bust, waist, hips, leg length, bounce)
+
+## Tested (later the same day)
+- Headless Chromium: project pills show and the pick is kept; a shoulder reaction saved, a tap on her shoulder in the full view showed the face, the move and the bubble and sent the action; no page errors; node test.mjs 54/54

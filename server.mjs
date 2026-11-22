@@ -441,7 +441,7 @@ http.createServer(async (req, res) => {
     if (p === '/api/catalogue') return send(res, 200, { tools: TOOLS, areas: Object.fromEntries(Object.entries(AREAS).map(([k, v]) => [k, v.label])), autonomy: AUTONOMY, worker: { online: workerOnline(), can: worker.can }, claude: !!claude, meshy: !!process.env.MESHY_API_KEY });
     if (p === '/api/think' && req.method === 'POST') {
       const b = await body(req); const tg = TG.read(b.text || ''); const th = b.thread && TH.get(b.thread);
-      const pj = (tg.project && PJ.card(tg.project)) || (th && th.project && PJ.card(th.project)) || PJ.match(b.text || '');
+      const pj = (b.project && PJ.card(b.project)) || (tg.project && PJ.card(tg.project)) || (th && th.project && PJ.card(th.project)) || PJ.match(b.text || '');
       const plan = await think(tg.rest || b.text, { claude, askPc, project: pj, tags: tg });
       return send(res, 200, { ...plan, tags: tg, project: pj ? { id: pj.id, name: pj.name, private: !!pj.private } : null, hints: PJ.hints(pj, tg.rest || b.text) });
     }
