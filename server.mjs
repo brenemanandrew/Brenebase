@@ -332,6 +332,22 @@ http.createServer(async (req, res) => {
     }
     if (p === '/api/threads' && req.method === 'GET') return send(res, 200, { threads: TH.list() });
     if (p === '/api/threads' && req.method === 'POST') { const b = await body(req); return send(res, 200, b.id ? TH.update(b.id, b) : TH.open(b)); }
+    if (p === '/api/inbox' && req.method === 'GET') {
+      /* finished and failed jobs for the results window, newest first, plus the talk about them */
+      const since = +u.searchParams.get('since') || 0;
+      const items = L.list(200).filter(j => ['done', 'failed'].includes(j.status) && !j.companion && !['tts', 'read', 'readdir'].includes(j.backend) && (j.updated || j.at) > since).sort((a, b) => (b.updated || b.at) - (a.updated || a.at)).slice(0, 30).map(dress)
+        .map(j => ({ id: j.id, label: j.label, text: String(j.text || '').slice(0, 200), status: j.status, at: j.updated || j.at, report: j.report, error: j.error, images: (j.result && j.result.images) || [], audio: j.result && j.result.audio, answer: j.result && j.result.text ? String(j.result.text).slice(0, 20000) : '', link: j.result && j.result.link, branch: j.result && j.result.branch }));
+      return send(res, 200, { items, talk: CP.historyOf('results'), waiting: L.list(80).some(j => j.companion && j.convo === 'results' && ['queued', 'running'].includes(j.status)), setup: CP.state().setup });
+    }
+    if (p === '/api/inbox/ask' && req.method === 'POST') {
+      const b = await body(req); const src = L.get(b.job); const text = String(b.text || '').trim(); if (!src || !text) return send(res, 400, { error: 'which result, and what do you want to know?' });
+      CP.ensure('results', 'Results'); CP.add('me', text, { convo: 'results', about: src.id });
+      const info = `${src.label}\nAsked: ${String(src.text || '').slice(0, 1500)}\nStatus: ${src.status}${src.error ? '\nError: ' + src.error : ''}\nResult:\n${String((src.result && src.result.text) || '').slice(0, 6000)}`;
+      const rq = CP.requestAbout('results', info);
+      const j = L.add({ tool: 'companion', mode: 'chat', backend: 'pc-model', runsOn: 'pc', label: 'Companion: about a result', text, system: rq.system, messages: rq.messages, maxTokens: 600, companion: true, convo: 'results', status: 'queued', quiet: true });
+      if (!workerOnline()) PA.jumpstart(['worker', 'model']).catch(() => {});
+      return send(res, 200, { ok: true, id: j.id });
+    }
     if (p === '/api/companion' && req.method === 'GET') return send(res, 200, { ...CP.state(), waiting: L.list(80).some(j => j.companion && ['queued', 'running'].includes(j.status)), pc: workerOnline() });
     if (p === '/api/companion/setup' && req.method === 'POST') { const b = await body(req); return send(res, 200, { setup: CP.setup(b) }); }
     if (p === '/api/companion/convo' && req.method === 'POST') { const b = await body(req); return send(res, 200, CP.convo(b)); }

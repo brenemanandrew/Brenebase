@@ -36,3 +36,13 @@ export function request(mode) {
   const messages = cur().history.filter(m => m.who !== 'note').slice(-24).map(m => ({ role: m.who === 'me' ? 'user' : 'assistant', content: m.text }));
   return { system, messages };
 }
+
+/* the Results conversation: where job results are talked over (the chat window that pops up with results) */
+export function ensure(id, name) { if (!db.convos.some(c => c.id === id)) { db.convos.push({ id, name, history: [] }); save(); } return db.convos.find(c => c.id === id); }
+export const historyOf = (id, n = 40) => ((db.convos.find(c => c.id === id) || {}).history || []).slice(-n);
+export function requestAbout(convoId, jobInfo) {
+  const s = db.setup || { name: 'Companion', about: '' };
+  const system = [`You are ${s.name}, Andrew's companion. ${s.about}`.trim(), 'Andrew is asking about the result of a job Brenebase ran for him. Answer about that result: explain it, pick out what matters, say plainly what is missing or wrong. Short, like a chat. Never use em dashes.', `The job:\n${jobInfo}`].join('\n\n');
+  const messages = historyOf(convoId, 16).filter(m => m.who !== 'note').map(m => ({ role: m.who === 'me' ? 'user' : 'assistant', content: m.text }));
+  return { system, messages };
+}

@@ -97,6 +97,12 @@ h3{margin:18px 0 6px}.mode{margin:4px 0 4px 10px}
 <section id="pc" style="display:none"><div id="pcBox"></div></section>
 <section id="tools" style="display:none"><div id="catalogue"></div></section>
 </main>
+<button id="rxBubble" title="Results" style="position:fixed;right:16px;bottom:16px;width:58px;height:58px;border-radius:50%;border:2px solid var(--acc);background:var(--card);color:var(--text);font-weight:700;font-size:22px;z-index:20;box-shadow:0 4px 18px #0008">&#128172;<span id="rxBadge" style="display:none;position:absolute;top:-4px;right:-4px;background:var(--bad);color:#fff;border-radius:10px;font-size:12px;padding:1px 6px"></span></button>
+<div id="rxPanel" style="display:none;position:fixed;right:12px;bottom:84px;width:min(420px,94vw);height:min(70vh,640px);background:var(--bg);border:1px solid var(--line);border-radius:14px;z-index:21;box-shadow:0 8px 30px #000a;flex-direction:column">
+  <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)"><span id="rxFace" style="width:30px;height:30px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-weight:700"></span><b id="rxName">Results</b><span class="dim" id="rxStatus" style="font-size:13px"></span><button class="sm" id="rxClose" style="margin-left:auto">&times;</button></div>
+  <div id="rxLog" style="flex:1;overflow:auto;padding:10px 12px"></div>
+  <div style="padding:8px 10px;border-top:1px solid var(--line)"><div class="dim" id="rxAbout" style="font-size:12px;margin-bottom:4px"></div><div style="display:flex;gap:6px"><input id="rxIn" placeholder="Ask about a result..." style="flex:1;padding:9px;border-radius:8px;border:1px solid var(--line);background:#0f1116;color:var(--text)"><button class="go" id="rxSend">Ask</button></div></div>
+</div>
 <script>
 const $ = id => document.getElementById(id);
 let CAT = null;
@@ -292,6 +298,40 @@ let PJS_ALL = [];
 function tabApply() { const t = tabNow(); $('thought').placeholder = t ? `In ${t.name}: what next?` : 'Dump the thought here. The hub picks where it goes.'; if (t && t.project && $('proj')) $('proj').value = t.project; }
 $('tnAdd').onclick = async () => { const proj = $('tnProj').value, name = $('tnName').value.trim() || (proj ? $('tnProj').selectedOptions[0].textContent : 'Conversation'); const t = await api('/api/threads', { name, project: proj }); TAB = t.id; localStorage.setItem('bbTab', TAB); $('tabNew').style.display = 'none'; await tabs(); tabApply(); };
 $('tnX').onclick = () => $('tabNew').style.display = 'none';
+
+/* ---- results window: the companion relays finished jobs, with downloads, and answers questions about them ---- */
+let RX = { seen: +localStorage.getItem('rxSeen') || Date.now(), items: [], talk: [], about: null, open: false };
+const dl = (name, text) => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/markdown' })); a.download = name; a.click(); };
+function rxRender() {
+  const S = RX.setup || {}, L = S.look || {}, name = S.name || 'Results';
+  $('rxName').textContent = name; $('rxFace').textContent = name[0] || 'R'; $('rxFace').style.background = L.hair || '#8a5bb8'; $('rxFace').style.color = L.skin || '#fff';
+  $('rxBubble').firstChild.textContent = S.name ? name[0] : '\u{1F4AC}'; $('rxBubble').style.background = S.name ? (L.top || 'var(--card)') : 'var(--card)';
+  const fresh = RX.items.filter(i => i.at > RX.seen).length; $('rxBadge').style.display = fresh ? '' : 'none'; $('rxBadge').textContent = fresh;
+  const say = (html, mine) => `<div style="margin:8px 0;${mine ? 'text-align:right' : ''}"><div style="display:inline-block;text-align:left;max-width:92%;background:${mine ? '#24324a' : 'var(--card)'};border:1px solid var(--line);border-radius:12px;padding:8px 10px">${html}</div></div>`;
+  const items = RX.items.slice().reverse().map(i => {
+    const R = i.report || {}; const line = (R.done && R.done[0]) || (R.blocked && R.blocked[0]) || '';
+    return say(`<div><b>${esc(i.label)}</b> <span class="st-${i.status}">${i.status}</span></div><div class="dim" style="font-size:13px">${esc(i.text)}</div>${line ? `<div style="margin-top:4px">${esc(line)}</div>` : ''}${R.next && R.next[0] ? `<div class="dim" style="font-size:13px;margin-top:2px">Next: ${esc(R.next[0])}</div>` : ''}
+      ${i.images.map(u => `<div style="margin-top:6px"><img src="${esc(u)}" style="max-width:100%;border-radius:8px"><a class="sm" href="${esc(u)}" download style="color:var(--acc);font-size:13px">Download</a></div>`).join('')}
+      ${i.audio ? `<audio controls src="${esc(i.audio)}" style="width:100%;margin-top:6px"></audio><a href="${esc(i.audio)}" download style="color:var(--acc);font-size:13px">Download audio</a>` : ''}
+      ${i.link ? `<div><a href="${esc(i.link)}" target="_blank" style="color:var(--acc)">Open</a></div>` : ''}
+      <div class="row" style="margin:6px 0 0">${i.answer ? `<button class="sm" onclick="rxShow('${i.id}')">Show</button><button class="sm" onclick="rxSave('${i.id}')">Download</button>` : ''}<button class="sm" onclick="rxAsk('${i.id}')">Ask about this</button>${i.status === 'failed' ? `<button class="sm" onclick="retryJob('${i.id}').then(rxPoll)">Retry</button>` : ''}</div>
+      <div id="rxFull_${i.id}" style="display:none" class="md">${md(i.answer)}</div>`);
+  }).join('');
+  const talk = RX.talk.map(m => say(m.who === 'me' ? esc(m.text) : m.who === 'note' ? `<span class="dim">${esc(m.text)}</span>` : md(m.text), m.who === 'me')).join('');
+  $('rxLog').innerHTML = (items || `<p class="dim">Finished jobs show up here.</p>`) + talk;
+  $('rxStatus').textContent = RX.waiting ? 'thinking...' : '';
+  const ab = RX.items.find(i => i.id === RX.about); $('rxAbout').textContent = ab ? `Asking about: ${ab.label}` : (RX.items.length ? `Asking about: ${RX.items[0].label} (the latest)` : '');
+  if (RX.open) $('rxLog').scrollTop = 1e9;
+}
+async function rxPoll() { try { const d = await api('/api/inbox'); const before = RX.items[0] && RX.items[0].id; RX.items = d.items; RX.talk = d.talk; RX.waiting = d.waiting; RX.setup = d.setup; rxRender(); if (!RX.open && d.items[0] && d.items[0].id !== before && before !== undefined && d.items[0].at > RX.seen) $('rxBubble').animate([{ transform: 'scale(1)' }, { transform: 'scale(1.25)' }, { transform: 'scale(1)' }], { duration: 600, iterations: 2 }); } catch { } }
+window.rxShow = id => { const e = $('rxFull_' + id); e.style.display = e.style.display === 'none' ? '' : 'none'; };
+window.rxSave = id => { const i = RX.items.find(x => x.id === id); dl(`${i.label.replace(/[^\w]+/g, '-')}-${id}.md`, `# ${i.label}\n\n${i.text}\n\n${i.answer}`); };
+window.rxAsk = id => { RX.about = id; rxRender(); $('rxIn').focus(); };
+$('rxBubble').onclick = () => { RX.open = !RX.open; $('rxPanel').style.display = RX.open ? 'flex' : 'none'; if (RX.open) { RX.seen = Date.now(); localStorage.setItem('rxSeen', RX.seen); rxRender(); } };
+$('rxClose').onclick = () => $('rxBubble').onclick();
+$('rxSend').onclick = async () => { const t = $('rxIn').value.trim(); const job = RX.about || (RX.items[0] && RX.items[0].id); if (!t || !job) return; $('rxIn').value = ''; await api('/api/inbox/ask', { job, text: t }); await rxPoll(); const w = setInterval(async () => { await rxPoll(); if (!RX.waiting) clearInterval(w); }, 2500); };
+$('rxIn').onkeydown = e => { if (e.key === 'Enter') $('rxSend').onclick(); };
+setInterval(rxPoll, 8000); setTimeout(rxPoll, 1500);
 
 /* ---- split ---- */
 let SP = null;
