@@ -1,3 +1,8 @@
+---
+name: doll
+description: Make or edit a Brenebase cartoon doll (the companion or a saved doll) from a description: hair, clothes, colours, body shape, tap reactions; answers with a JSON look. Not for 3D models or game characters (use the Breneland character skills).
+---
+
 # Skill: make and edit a Brenebase doll
 
 A doll is the cartoon character drawn by `public/companion-avatar.js`: flat colours, black ink outlines, a full body

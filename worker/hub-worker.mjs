@@ -71,7 +71,7 @@ function wav16(f32, rate) {
 }
 /* project notes on this PC: only files inside these folders can be read (Google Drive for desktop, project folders) */
 const READ_ROOTS = (process.env.READ_ROOTS || 'G:\\My Drive;F:\\Projects;C:\\Program Files (x86)\\World of Warcraft\\_retail_\\Interface\\AddOns').split(';').map(r => path.resolve(r.trim())).filter(Boolean);
-can.push('read', 'readdir', 'probe', 'studio', 'studio-image', 'engines', 'sd-image', 'engine-help');
+can.push('read', 'readdir', 'probe', 'studio', 'studio-image', 'engines', 'sd-image', 'engine-help', 'skills-list');
 console.log(`hub worker: ${HUB}\ncan do: ${can.join(', ')}`);
 /* things can come up after the worker (LM Studio's server, Claude Code, the voice pack): look again every minute */
 setInterval(async () => {
@@ -97,9 +97,29 @@ const run = (cmd, args, cwd, input, onOut) => new Promise(ok => {
 /* tell Brenebase what step a job is on, with the last lines of output, at most every 4 seconds */
 async function progress(j, step, text, force) {
   j._tail ||= []; j._last ||= 0;
-  if (text) j._tail = j._tail.concat(String(text).split(/\r?\n/).filter(Boolean)).slice(-40);
+  if (text) j._tail = j._tail.concat(String(text).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').split(/\n/).map(l => l.split('\r').filter(x => x.trim()).pop() || '').filter(x => x.trim())).slice(-40);
   if (!force && Date.now() - j._last < 4000) return; j._last = Date.now();
   try { await fetch(`${HUB}/api/worker/progress`, { method: 'POST', headers: H, body: JSON.stringify({ id: j.id, step, log: j._tail.join('\n') }), signal: AbortSignal.timeout(15000) }); } catch { /* the result still goes back at the end */ }
+}
+/* where a repo lives on this PC: REPOS, or F:\Projects (where Breneland-Next is), else REPOS for a new clone */
+function repoDir(r) { const name = String(r || 'brenemanandrew/Brenelandtest').split('/').pop(); for (const root of [REPOS, ...(process.env.PROJECT_ROOTS || 'F:\\Projects').split(';')]) { const d = path.join(root, name); if (fs.existsSync(path.join(d, '.git'))) return d; } return path.join(REPOS, name); }
+async function worktree(repo, branch, key, j) {
+  const dir = path.join(`${repo}-wt`, String(key));
+  if (fs.existsSync(path.join(dir, '.git'))) { await progress(j, `reusing worktree ${dir}`, '', true); const b = await run('git', ['rev-parse', 'HEAD'], dir); return { dir, base: b.out.trim() }; }
+  fs.mkdirSync(path.dirname(dir), { recursive: true });
+  const def = (await run('git', ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], repo)).out.trim() || 'main';
+  const from = (await run('git', ['rev-parse', '--verify', def], repo)).code === 0 ? def : 'HEAD';
+  await progress(j, `new worktree ${dir} on ${branch} (from ${from})`, '', true);
+  const w = await run('git', ['worktree', 'add', '-B', branch, dir, from], repo);
+  if (w.code || !fs.existsSync(dir)) return { error: `Could not make a worktree at ${dir}: ${(w.err || w.out).slice(-300)}` };
+  const b = await run('git', ['rev-parse', 'HEAD'], dir); return { dir, base: b.out.trim() };
+}
+/* the skill folders on this PC: every SKILL.md, sent whole so the hub can check them and hand them to jobs */
+function readSkills() {
+  const dirs = (process.env.SKILL_DIRS || `F:\\Projects\\Breneland-Next\\docs\\skills;${path.join(os.homedir(), '.claude', 'skills')}`).split(';').map(x => x.trim()).filter(Boolean);
+  const files = [], errors = [];
+  for (const d of dirs) { try { for (const e of fs.readdirSync(d, { withFileTypes: true })) { if (!e.isDirectory()) continue; const f = path.join(d, e.name, 'SKILL.md'); if (fs.existsSync(f)) files.push({ path: f, text: fs.readFileSync(f, 'utf8').slice(0, 80000) }); } } catch (e) { errors.push(`${d}: ${e.code === 'ENOENT' ? 'not found' : e.message}`); } }
+  return { files, errors };
 }
 async function doJob(j) { await progress(j, 'started on the PC', '', true);
   if (j.backend === 'pc-model') {
@@ -135,23 +155,25 @@ async function doJob(j) { await progress(j, 'started on the PC', '', true);
     return { ok: r.ok, text: d.choices?.[0]?.message?.content || '', error: r.ok ? undefined : JSON.stringify(d).slice(0, 300), result: { seen, visionNote } };
   }
   if (j.backend === 'claude-code') {
-    const repo = path.join(REPOS, (j.repo || 'brenemanandrew/Brenelandtest').split('/').pop());
+    const repo = repoDir(j.repo);
     /* the repo is not on this PC yet: clone it into REPOS (uses the PC's own git sign-in for private repos) */
     if (!fs.existsSync(repo)) {
       await progress(j, `cloning ${j.repo || 'brenemanandrew/Brenelandtest'} into ${REPOS}`, '', true); fs.mkdirSync(REPOS, { recursive: true });
       const c = await run('git', ['clone', `https://github.com/${j.repo || 'brenemanandrew/Brenelandtest'}.git`, repo], REPOS, null, t => progress(j, 'cloning', t));
       if (c.code || !fs.existsSync(repo)) return { ok: false, error: `Could not clone ${j.repo} into ${repo}: ${(c.err || c.out).slice(-300)}` };
     }
+    /* every job works in its own worktree (<repo>-wt\<job>), never in the main working copy: the checkout there stays on
+       its branch and other sessions' uncommitted work is never swept in. Jobs commit on their branch and never push. */
     const branch = j.parent ? `hub/${j.parent}` : `hub/${j.id}`;
-    await progress(j, `switching to branch ${branch}`, '', true);
-    await run('git', ['checkout', '-B', branch], repo);
+    const wt = await worktree(repo, branch, j.parent || j.id, j);
+    if (wt.error) return { ok: false, error: wt.error };
     await progress(j, 'Claude Code is working', '', true);
-    const r = await run(CLAUDE, ['-p', '--output-format', 'text'], repo, j.prompt, t => progress(j, 'Claude Code is working', t));
+    const r = await run(CLAUDE, ['-p', '--output-format', 'text'], wt.dir, j.prompt, t => progress(j, 'Claude Code is working', t));
     await progress(j, 'committing on the branch', '', true);
-    await run('git', ['add', '-A'], repo); await run('git', ['commit', '-m', `hub: ${j.label}`], repo);
-    const diff = await run('git', ['diff', '--stat', 'HEAD~1'], repo);
-    let merge = null; try { merge = JSON.parse(fs.readFileSync(path.join(repo, 'hub-merge.json'), 'utf8')); } catch { /* not written; the hub also looks in the reply */ }
-    return { ok: r.code === 0, text: r.out, result: { branch, diff: diff.out, merge }, error: r.code ? r.err : undefined };
+    await run('git', ['add', '-A'], wt.dir); await run('git', ['commit', '-m', `hub: ${j.label}`], wt.dir);
+    const diff = await run('git', ['diff', '--stat', `${wt.base}..HEAD`], wt.dir);
+    let merge = null; try { merge = JSON.parse(fs.readFileSync(path.join(wt.dir, 'hub-merge.json'), 'utf8')); } catch { /* not written; the hub also looks in the reply */ }
+    return { ok: r.code === 0, text: r.out, result: { branch, worktree: wt.dir, diff: diff.out, merge }, error: r.code ? r.err : undefined };
   }
   if (j.backend === 'blender') {
     const r = await run(BLENDER, ['-b', '--python', path.join(HERE, 'blender_ops.py'), '--', JSON.stringify({ mode: j.mode, ...j.args })], REPOS);
@@ -210,6 +232,7 @@ async function doJob(j) { await progress(j, 'started on the PC', '', true);
     return { ok: images.length > 0, text: `${images.length} of ${n} picture(s) made on your PC with ${eng === 'zimage' ? 'Z-Image Turbo' : eng === 'manga' ? 'Illustrious XL + manga LoRA' : 'Illustrious XL'} (${W}x${Hh}).`, result: { images64: images }, error: images.length ? undefined : `The engine made no picture:\n${logs.join('\n---\n')}` };
   }
   /* the engine's own list of options (to wire the movie model up exactly) */
+  if (j.backend === 'skills-list') { const r = readSkills(); return { ok: true, text: `${r.files.length} skill(s) read${r.errors.length ? '; could not read: ' + r.errors.join('; ') : ''}`, result: r }; }
   if (j.backend === 'engine-help') {
     const SD = process.env.SD_CLI || 'F:\\AI\\minimax-h3\\sd-cli\\sd-cli.exe'; if (!fs.existsSync(SD)) return { ok: false, error: `Not found: ${SD}` };
     const r = await run(SD, ['--help'], path.dirname(SD)); const extra = fs.readdirSync(path.dirname(SD)).filter(f => /\.(md|txt|bat|ps1|cmd|json)$/i.test(f)).slice(0, 20).map(f => { try { return `--- ${f}\n` + fs.readFileSync(path.join(path.dirname(SD), f), 'utf8').slice(0, 6000); } catch { return ''; } }).join('\n');
@@ -333,9 +356,11 @@ async function doJob(j) { await progress(j, 'started on the PC', '', true);
 
 /* Merge: put each filled slot where the code's manifest says, check it, run the build test, commit on the branch. */
 async function merge(j) {
-  const repo = path.join(REPOS, (j.repo || 'brenemanandrew/Brenelandtest').split('/').pop());
-  if (!fs.existsSync(repo)) return { ok: false, error: `No checkout at ${repo}: run the code part first (it clones the repo)` };
-  const co = await run('git', ['checkout', j.branch], repo); if (co.code) return { ok: false, error: `Could not switch to ${j.branch}: ${co.err}` };
+  const repo0 = repoDir(j.repo);
+  if (!fs.existsSync(repo0)) return { ok: false, error: `No checkout at ${repo0}: run the code part first (it clones the repo)` };
+  /* the merge happens in the split's own worktree, never the main working copy */
+  const wtm = await worktree(repo0, j.branch, j.parent || String(j.branch).replace(/^hub\//, ''), j); if (wtm.error) return { ok: false, error: wtm.error };
+  const repo = wtm.dir;
   const where = Object.fromEntries(((j.manifest && j.manifest.slots) || []).map(x => [x.id, x.path]));
   const report = [];
   for (const sl of j.slots) {

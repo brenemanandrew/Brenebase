@@ -126,7 +126,7 @@ h3{margin:18px 0 6px}.mode{margin:4px 0 4px 10px}
     <div style="display:flex;gap:6px;padding:8px 10px 14px"><input id="cpFullIn" placeholder="Say it." style="flex:1;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--text)"><button class="go" id="cpFullSend">Send</button></div>
   </div>
 </section>
-<section id="pc" style="display:none"><div id="pcBox"></div></section>
+<section id="pc" style="display:none"><div id="pcBox"></div><div id="skBox"></div></section>
 <section id="tools" style="display:none"><div id="catalogue"></div></section>
 </main>
 <button id="rxBubble" title="Results" style="position:fixed;right:16px;bottom:16px;width:58px;height:58px;border-radius:50%;border:2px solid var(--acc);background:var(--card);color:var(--text);font-weight:700;font-size:22px;z-index:20;box-shadow:0 4px 18px #0008">&#128172;<span id="rxBadge" style="display:none;position:absolute;top:-4px;right:-4px;background:var(--bad);color:#fff;border-radius:10px;font-size:12px;padding:1px 6px"></span></button>
@@ -279,9 +279,9 @@ function jobCard(j) {
   const statusLine = j.status === 'running' || j.status === 'queued' ? `<div class="st-${j.status}" style="margin:4px 0">${j.status === 'queued' ? 'Waiting for the PC' : 'Working'}${j.step ? ': ' + esc(j.step) : ''}${j.elapsed != null ? ' &middot; ' + mins(j.elapsed) : ''}</div>` : '';
   const partsLine = P ? `<div style="margin:4px 0"><span class="st-done">${P.done} done</span> &middot; <span class="st-running">${P.running} running</span> &middot; <span class="st-waiting">${P.waiting} waiting</span>${P.failed ? ` &middot; <span class="st-failed">${P.failed} failed</span>` : ''} <span class="dim">of ${P.total} parts</span></div>` : '';
   const L = (h, a, cls) => a && a.length ? `<div style="margin:4px 0"><b class="${cls || ''}">${h}</b>${a.map(x => `<div class="mdli"><span>&bull;</span><span>${esc(x)}</span></div>`).join('')}</div>` : '';
-  const reportBox = rep ? `<div class="card" style="margin:8px 0;border-color:${j.status === 'failed' ? 'var(--bad)' : 'var(--ok)'}"><b>Report</b>${L('Done', rep.done)}${L('Tested', rep.tested)}${L('Not tested', rep.notTested, 'st-waiting')}${L('Blocked', rep.blocked, 'st-failed')}${L('Next', rep.next)}</div>` : '';
+  const reportBox = rep ? `<div class="card" style="margin:8px 0;border-color:${j.status === 'failed' ? 'var(--bad)' : 'var(--ok)'}">${(rep.skillErrors || []).length ? `<div class="st-waiting" style="font-size:13px">Skills not fully checked: ${esc(rep.skillErrors.join('; '))}</div>` : ''}<b>Report</b>${rep.skills ? `<div class="dim" style="font-size:13px">Skills used: ${rep.skills.length ? rep.skills.map(esc).join(', ') : 'none applied'}${rep.skillsBy ? ' (checked by ' + esc(rep.skillsBy) + ')' : ''}</div>` : ''}${L('Done', rep.done)}${L('Tested', rep.tested)}${L('Not tested', rep.notTested, 'st-waiting')}${L('Blocked', rep.blocked, 'st-failed')}${L('Next', rep.next)}</div>` : '';
   const raw = ['claude-code', 'merge'].includes(j.backend) ? r.text : '';
-  const output = j.live || raw || (r.text && j.status === 'failed') || r.diff ? `<details${j.status === 'running' ? ' open' : ''}><summary class="dim">Output${j.status === 'running' ? ' (live)' : ''}</summary><pre>${esc([raw || j.live, r.diff].filter(Boolean).join('\n\n') || r.text)}</pre></details>` : '';
+  const output = j.live || raw || (r.text && j.status === 'failed') || r.diff ? `<details${j.status === 'running' ? ' open' : ''}><summary class="dim">Output${j.status === 'running' ? ' (live)' : ''} <button class="sm" style="padding:2px 8px;font-size:12px" onclick="event.preventDefault();copyOut(this)">Copy</button></summary><pre>${esc([raw || j.live, r.diff].filter(Boolean).join('\n\n') || r.text)}</pre></details>` : '';
   const shut = isShut(j);
   return `<div class="card" id="job_${j.id}"><div class="row jhead" style="margin:0;cursor:pointer" onclick="toggleJob('${j.id}', event)"><b><span class="dim jarrow">${shut ? '&#9656;' : '&#9662;'}</span> ${esc(j.label)}</b>${j.area ? `<span class="tag">${esc(j.area)}</span>` : ''}<span class="tag">${esc(j.runsOn)}</span><span class="st-${j.status}">${j.status}</span></div>
   <div class="dim">${esc((j.text || '').slice(0, 160))}</div>
@@ -587,6 +587,7 @@ $('syncBtn').onclick = async () => { $('syncMsg').textContent = 'reading...'; co
 
 /* ---- PC: the agent on Andrew's PC, reached over Tailscale or by its polling ---- */
 async function pc(quiet) {
+  if (!quiet) skillsCard().then(h => { $('skBox').innerHTML = h; }).catch(() => { });
   const d = await api('/api/pc'); const st = d.status;
   const loaded = st && st.model && st.model.loaded.length;
   $('adot').className = 'dot' + (d.reach === 'tailscale' ? ' on' : d.reach === 'polling' ? ' on' : '');
@@ -613,6 +614,10 @@ window.speak = async (id, b) => { b.disabled = true; b.textContent = 'Voice on t
 window.restyle = async (id, style) => { const k = await api(`/api/jobs/${id}/restyle`, { style }); $('last').innerHTML = jobCard(k); jobs(); };
 window.pasteBack = async id => { const v = $('ra_' + id).value.trim(); if (!v) return; await api(`/api/jobs/${id}/answer`, { text: v }); jobs(); };
 window.openDoll = async id => { const j = await api(`/api/jobs/${id}`); if (!j.result || !j.result.doll) return; document.querySelector('nav button[data-tab=companion]').click(); await new Promise(r => setTimeout(r, 400)); CP = await api('/api/companion'); cpPending = j.result.doll; cpSetupView(!!CP.setup); };
+window.copyOut = b => { const pre = b.closest('details').querySelector('pre'); navigator.clipboard.writeText(pre ? pre.textContent : '').then(() => { b.textContent = 'Copied'; setTimeout(() => { b.textContent = 'Copy'; }, 1500); }).catch(() => { b.textContent = 'Could not copy'; }); };
+window.skillsSync = async b => { b.disabled = true; b.textContent = 'Reading (see Jobs)...'; await api('/api/skills/sync', {}); };
+window.skillsTry = async () => { const t = $('skTask').value.trim(); if (!t) return; $('skOut').textContent = 'Checking...'; const r = await api('/api/skills/check', { task: t }); $('skOut').textContent = [`Checked by ${r.by}. Used: ${r.used.length ? r.used.join(', ') : 'none'}`, ...(r.errors || []).map(e => 'Could not read: ' + e), '', ...(r.log || [])].join('\n'); };
+async function skillsCard() { const d = await api('/api/skills'); return `<div class="card"><b>Skills (${d.skills.length})</b><div class="dim">Every job checks these before it starts and logs which it used. From your PC: ${d.pc.at ? `${d.pc.count} read ${new Date(d.pc.at).toLocaleString()}` : 'not read yet'}${d.pc.error ? ` (could not read: ${esc(d.pc.error)})` : ''}.</div><div style="margin:6px 0">${d.skills.map(x => `<span class="tag" title="${esc(x.description)}">${esc(x.name)}</span>`).join(' ')}</div><div class="row"><button class="sm" onclick="skillsSync(this)">Read skills from the PC</button></div><div class="row"><input id="skTask" placeholder="Try a task: find a free model for a lamp" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--line);background:#0f1116;color:var(--text)"><button class="sm" onclick="skillsTry()">Check</button></div><pre id="skOut" style="display:block;min-height:0"></pre></div>`; }
 window.enginesHelp = async b => { b.disabled = true; b.textContent = 'Reading (see Jobs)...'; await api('/api/engines/help', {}); };
 window.enginesFind = async b => { b.disabled = true; b.textContent = 'Looking (see Jobs)...'; await api('/api/engines/find', {}); };
 window.studioLook = async b => { b.disabled = true; b.textContent = 'Reading (see Jobs)...'; await api('/api/studio/look', {}); };

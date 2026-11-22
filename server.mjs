@@ -33,6 +33,7 @@ import * as U from './updates.mjs';
 import * as TG from './tags.mjs';
 import { vet } from './vet.mjs';
 import { think } from './think.mjs';
+import * as SK from './skills.mjs';
 import * as CP from './companion.mjs';
 import * as TH from './threads.mjs';
 
@@ -136,6 +137,7 @@ const IMG_DIR = path.join(process.env.DATA_DIR || './data', 'images');
 /* what the page shows: the job plus its report, how long it has run, and for a split how many parts are where */
 function dress(j) {
   const o = { ...j, report: report(j) };
+  if (j.skillCheck) { o.report = { ...o.report, skills: j.skillCheck.used, skillsBy: j.skillCheck.by, skillErrors: j.skillCheck.errors }; delete o.skillCheck; }
   if (j.status === 'running' || j.status === 'queued') o.elapsed = Math.round((Date.now() - (j.startedAt || j.at)) / 1000);
   if (j.backend === 'parts' && j.children) {
     /* a parts card is as far along as its parts, and its report lists them */
@@ -204,17 +206,31 @@ function makeJob({ text, tool, mode, area, autonomy = 'draft', args = {}, repo, 
   return made;
 }
 
+/* every task checks the skills Brenebase has before it starts (skills.mjs): one log line per skill, the picked ones go
+   to whoever does the work in full, the report lists them. Chat with the companion and the PC's own reading jobs are
+   not tasks and are not checked. */
+const SKILL_BACKENDS = ['claude-code', 'claude', 'brief', 'copilot', 'pc-model', 'blender', 'pc-run', 'merge', 'meshy', 'sd-image', 'doll'];
+async function skillCheck(j) {
+  if (!SKILL_BACKENDS.includes(j.backend) || j.quiet || j.companion || j.skillCheck) return j.skillCheck || null;
+  const pj = j.project && PJ.card(j.project), local = /\[\[local\]\]/i.test(j.text || '') || !!(pj && pj.private);
+  const c = await SK.check(String(j.text || '').slice(0, 4000), { claude: local ? null : claude, local }).catch(e => ({ by: 'none', lines: [], used: [], errors: [`skill check failed: ${e.message || e}`] }));
+  L.update(j.id, { skillCheck: c }, `skills checked (${c.by}): ${c.used.length ? 'using ' + c.used.join(', ') : 'none apply'}`);
+  for (const line of SK.logLines(c)) L.update(j.id, {}, line);
+  for (const e of c.errors) L.update(j.id, {}, `skills: could not read ${e}`);
+  return c;
+}
 async function start(j) {
   try {
+    const sc = await skillCheck(j), skillText = sc ? SK.brief(sc) : '';
     if (j.backend === 'doll') { L.update(j.id, { status: 'running', step: 'the PC model is using the doll skill' }); const cur = CP.state().setup || {}; const d = await dollAsk(j.mode === 'new' ? `Make a new doll: ${j.text}` : j.text, j.mode === 'new' ? {} : cur); return L.update(j.id, d.error ? { status: 'failed', error: d.error } : { status: 'done', result: { text: d.note || 'Doll ready.', doll: d } }, d.error ? 'doll skill failed' : 'doll ready'); }
-    if (j.backend === 'brief') { const b = brief(j, PJ.context(j.project && PJ.card(j.project), 'code', j.text)); return L.update(j.id, { status: 'done', result: { text: b.prompt }, held: b.held }, b.secrets ? `${b.secrets} secret(s) removed` : 'brief written'); }
+    if (j.backend === 'brief') { const b = brief(j, PJ.context(j.project && PJ.card(j.project), 'code', j.text) + (skillText ? '\n\n' + skillText : '')); return L.update(j.id, { status: 'done', result: { text: b.prompt }, held: b.held }, b.secrets ? `${b.secrets} secret(s) removed` : 'brief written'); }
     if (j.backend === 'link') { const f = LINKS[`${j.tool}:${j.mode}`]; return L.update(j.id, { status: 'done', result: { link: f ? f(j.target) : null, text: j.does } }, 'link ready'); }
-    if (j.backend === 'claude') { L.update(j.id, { status: 'running' }); const r = await runClaude(j, claude, PJ.context(j.project && PJ.card(j.project), 'cloud', j.text), j.thread ? TH.history(L.list(200).filter(x => x.id !== j.id), j.thread) : []); return L.update(j.id, { status: 'done', result: { text: rejoin(r.text, r.held) } }, 'answered by Claude'); }
+    if (j.backend === 'claude') { L.update(j.id, { status: 'running' }); const r = await runClaude(j, claude, PJ.context(j.project && PJ.card(j.project), 'cloud', j.text) + (skillText ? '\n\n' + skillText : ''), j.thread ? TH.history(L.list(200).filter(x => x.id !== j.id), j.thread) : []); return L.update(j.id, { status: 'done', result: { text: rejoin(r.text, r.held) } }, 'answered by Claude'); }
     if (j.backend === 'copilot') { const r = await runCopilot(j, j.project && PJ.card(j.project)); return r.relay ? L.update(j.id, { status: 'waiting-answer', result: { text: r.prompt, link: r.link, relay: true } }, 'Ready: copy it into Copilot, paste the answer back') : copilotAnswer(j, r.text, r.via); }
     if (j.backend === 'meshy') { L.update(j.id, { status: 'running' }); const r = await runMeshy(j); return L.update(j.id, { status: 'running', result: r }, `Meshy task ${r.task} started`); }
     if (PC_BACKENDS.includes(j.backend)) {
       const pj = j.project && PJ.card(j.project);
-      const extra = j.backend === 'claude-code' ? { prompt: brief(j, PJ.context(pj, 'code', j.text)).prompt, held: brief(j).held } : j.backend === 'pc-model' ? { system: systemFor(j.tool, j.mode) + (pj ? '\n\n' + PJ.context(pj, 'local', j.text) : ''), ...(j.thread && !j.messages ? { messages: [...TH.history(L.list(200).filter(x => x.id !== j.id), j.thread), { role: 'user', content: j.text }] } : {}) } : {};
+      const extra = j.backend === 'claude-code' ? { prompt: brief(j, PJ.context(pj, 'code', j.text)).prompt + (skillText ? '\n\n' + skillText : ''), held: brief(j).held } : j.backend === 'pc-model' ? { system: systemFor(j.tool, j.mode) + (pj ? '\n\n' + PJ.context(pj, 'local', j.text) : '') + (skillText ? '\n\n' + skillText : ''), ...(j.thread && !j.messages ? { messages: [...TH.history(L.list(200).filter(x => x.id !== j.id), j.thread), { role: 'user', content: j.text }] } : {}) } : {};
       const q = L.update(j.id, { status: 'queued', ...extra }, workerOnline() ? 'sent to the PC' : 'waiting for the PC worker; asking the PC agent to start what is needed');
       if (!workerOnline()) PA.jumpstart(['worker', ...(j.backend === 'pc-model' ? ['model'] : [])]).then(n => n.length && L.update(j.id, {}, `Jumpstart: ${n.join('; ')}`)).catch(() => {});
       return q;
@@ -262,7 +278,7 @@ function fillSlot(parent, id, fill) { const sl = parent.slots.find(x => x.id ===
 /* the doll skill (skills/doll.md): the PC model turns words into a doll's look; checked here, never saved until he taps Save. No cloud model. */
 const SKILLS = path.join(path.dirname(new URL(import.meta.url).pathname), 'skills');
 async function dollAsk(text, current = {}) {
-  const out = await askPc(fs.readFileSync(path.join(SKILLS, 'doll.md'), 'utf8'), `The doll right now:\n${JSON.stringify({ look: current.look || {}, reactions: current.reactions || {} })}\n\nRequest: ${text}`);
+  const out = await askPc(fs.readFileSync(path.join(SKILLS, 'doll', 'SKILL.md'), 'utf8'), `The doll right now:\n${JSON.stringify({ look: current.look || {}, reactions: current.reactions || {} })}\n\nRequest: ${text}`);
   if (out == null) return { error: 'Your PC model is not free right now. The doll skill runs only on your PC: check the Worker and Model lights.' };
   const m = String(out).match(/\{[\s\S]*\}/); let j = null; try { j = m && JSON.parse(m[0]); } catch { }
   if (!j) return { error: 'The PC model did not answer with a doll. Try saying it another way.', raw: String(out).slice(0, 400) };
@@ -363,8 +379,10 @@ http.createServer(async (req, res) => {
     if (p.startsWith('/api/worker/')) {
       if (!isWorker(req)) return send(res, 401, { error: 'worker token refused' });
       worker.seen = Date.now();
+      if (p === '/api/worker/next' && Date.now() - SK.pcState().at > 1800000 && !L.list(200).some(x => x.backend === 'skills-list' && ['queued', 'running'].includes(x.status)) && (u.searchParams.get('has') || u.searchParams.get('can') || '').includes('skills-list')) L.add({ tool: 'skills', mode: 'read', backend: 'skills-list', runsOn: 'pc', label: 'Read the skill folders on the PC', text: 'Read every SKILL.md in the PC skill folders.', status: 'queued', quiet: true });
       if (p === '/api/worker/next') { const offer = (u.searchParams.get('can') || '').split(',').filter(Boolean); worker.can = u.searchParams.has('has') ? (u.searchParams.get('has') || '').split(',').filter(Boolean) : offer; const nj = L.next(offer); if (nj) { nj.startedAt = Date.now(); nj.step = 'picked up by the PC'; } return send(res, 200, { job: nj }); }
       if (p === '/api/worker/done' && req.method === 'POST') { const b = await body(req); const j = L.get(b.id); if (!j) return send(res, 404, {}); if (j.backend === 'readdir') { const n = b.ok ? U.fromPcFiles(b.result && b.result.files, j.dir) : 0; return send(res, 200, L.update(j.id, { status: b.ok ? 'done' : 'failed', error: b.error, result: { text: `${n} new update(s)` } }, 'update folder read')); }
+      if (j.backend === 'skills-list') { const r = b.result || {}; SK.setPc(b.ok ? r.files : [], b.ok ? ((r.errors || []).join('; ') || null) : (b.error || 'the PC could not read them')); return send(res, 200, L.update(j.id, { status: b.ok ? 'done' : 'failed', error: b.error, result: { text: b.text } }, 'skills read')); }
       if (j.backend === 'read') { if (b.ok && b.result && b.result.foundAt && b.result.foundAt !== j.source.path) PJ.remember(j.project, j.source.path, b.result.foundAt); const added = PJ.recordPc(j.project, j.source, b.ok, b.text || '', b.error); return send(res, 200, L.update(j.id, { status: b.ok ? 'done' : 'failed', error: b.error, result: { text: b.ok ? `${added.length} new note(s)` : '' } }, 'notes read')); } const text = b.text != null ? rejoin(b.text, j.held || []) : undefined; if (j.image64) { delete j.image64; } if (j.pic && b.result && b.result.seen) CP.seen(j.pic, b.result.seen); if (j.companion && b.result && b.result.visionNote) CP.add('note', b.result.visionNote, { convo: j.convo }); if (j.companion && b.ok) CP.add('them', b.text || '', { job: j.id, convo: j.convo }); else if (j.companion) CP.add('note', `No reply: ${b.error || 'the PC model did not answer'}`, { convo: j.convo });
         if (b.result && b.result.audio64) { fs.mkdirSync(IMG_DIR, { recursive: true }); const f = `${j.id}.wav`; fs.writeFileSync(path.join(IMG_DIR, f), Buffer.from(b.result.audio64, 'base64')); b.result.audio = `/api/img/${f}`; delete b.result.audio64; if (j.of) { const src = L.get(j.of); if (src) L.update(src.id, { result: { ...src.result, audio: b.result.audio } }, 'read aloud ready'); } }
         if (b.result && b.result.images64) { fs.mkdirSync(IMG_DIR, { recursive: true }); b.result.images = b.result.images64.map(im => { const f = `${j.id}-${im.name.replace(/[^\w.-]/g, '')}`; fs.writeFileSync(path.join(IMG_DIR, f), Buffer.from(im.data, 'base64')); return `/api/img/${f}`; }); delete b.result.images64; b.result.restyle = j.tool === 'image' && j.mode === 'model'; }
@@ -382,7 +400,7 @@ http.createServer(async (req, res) => {
     if (one && req.method === 'GET') { const j = L.get(one[1]); return j ? send(res, 200, dress(j)) : send(res, 404, {}); }
     const rt = p.match(/^\/api\/jobs\/([a-f0-9]+)\/retry$/);
     if (rt && req.method === 'POST') {
-      const j = L.get(rt[1]); if (!j) return send(res, 404, {});
+      const j = L.get(rt[1]); if (!j) return send(res, 404, {}); delete j.skillCheck;
       L.update(j.id, { error: undefined, step: '', live: '', startedAt: 0 }, 'retried');
       if (PC_BACKENDS.includes(j.backend)) { L.update(j.id, { status: 'queued' }); if (!workerOnline()) PA.jumpstart(['worker']).catch(() => {}); return send(res, 200, dress(L.get(j.id))); }
       return send(res, 200, dress(await start(L.update(j.id, { status: 'ready' }))));
@@ -403,6 +421,9 @@ http.createServer(async (req, res) => {
       return send(res, 200, makeJob({ text: `${b.style || 'Realistic, detailed, natural lighting'}. Keep the same character, outfit, pose and framing. ${j.text}`, tool: 'image', mode: 'edit', area: j.area, autonomy: 'draft', args: { image_url: data }, project: j.project }));
     }
     if (p === '/api/studio/probe' && req.method === 'POST') { const j = L.add({ tool: 'image', mode: 'studio', backend: 'probe', runsOn: 'pc', label: 'Find Brenai Studio on the PC', text: 'Look for Brenai Studio on the usual local ports and list how its page talks to its server.', status: 'queued' }); if (!workerOnline()) PA.jumpstart(['worker']).catch(() => {}); return send(res, 200, j); }
+    if (p === '/api/skills' && req.method === 'GET') { const a = SK.all(); return send(res, 200, { skills: a.skills.map(x => ({ name: x.name, description: x.description, from: x.from, src: x.src })), errors: a.errors, pc: SK.pcState() }); }
+    if (p === '/api/skills/check' && req.method === 'POST') { const b = await body(req); const c = await SK.check(String(b.task || ''), { claude: b.rulesOnly ? null : claude }); return send(res, 200, { ...c, log: SK.logLines(c) }); }
+    if (p === '/api/skills/sync' && req.method === 'POST') { const j = L.add({ tool: 'skills', mode: 'read', backend: 'skills-list', runsOn: 'pc', label: 'Read the skill folders on the PC', text: 'Read every SKILL.md in the PC skill folders.', status: 'queued' }); return send(res, 200, j); }
     if (p === '/api/engines/help' && req.method === 'POST') { const j = L.add({ tool: 'image', mode: 'studio', backend: 'engine-help', runsOn: 'pc', label: "Read the picture and movie engine's options", text: 'Run sd-cli --help and read the notes next to it, so the movie model can be wired up exactly. Changes nothing.', status: 'queued' }); return send(res, 200, j); }
     if (p === '/api/engines/find' && req.method === 'POST') { const j = L.add({ tool: 'image', mode: 'studio', backend: 'engines', runsOn: 'pc', label: 'Find the image and movie engines on the PC', text: 'Find how Brenai Studio runs its image and movie models (program, model files, command lines), so Brenebase can run them itself. Reads only.', status: 'queued' }); return send(res, 200, j); }
     if (p === '/api/studio/look' && req.method === 'POST') {
