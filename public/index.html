@@ -264,7 +264,11 @@ function cpPlay(url) {
   const a = new Audio(url); let ctx, an, buf, raf;
   try { ctx = new (window.AudioContext || window.webkitAudioContext)(); an = ctx.createAnalyser(); an.fftSize = 256; ctx.createMediaElementSource(a).connect(an); an.connect(ctx.destination); buf = new Uint8Array(an.frequencyBinCount); } catch { }
   const tick = () => { if (an) { an.getByteTimeDomainData(buf); let m = 0; for (const v of buf) m = Math.max(m, Math.abs(v - 128)); cpAv && cpAv.talk(Math.min(1, m / 50)); } else cpAv && cpAv.talk(0.6); if (!a.paused && !a.ended) raf = requestAnimationFrame(tick); };
-  a.onplay = tick; a.play().catch(() => { });
+  /* the mic must not hear her own voice: pause listening while she speaks, resume after */
+  let paused = false;
+  a.onplay = () => { if (listening) { paused = true; listening = false; try { rec && rec.stop(); } catch { } } tick(); };
+  a.onended = a.onpause = () => { if (paused) { paused = false; setTimeout(() => { listening = true; try { rec && rec.start(); } catch { } }, 400); } };
+  a.play().catch(() => { });
 }
 async function cpSpeak(jobId) {
   await api(`/api/jobs/${jobId}/speak`, { voice: CP.setup.voice });
