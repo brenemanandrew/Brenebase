@@ -15,7 +15,7 @@
      REPOS             folder that holds your repo checkouts (default: %USERPROFILE%\repos)
      READ_ROOTS        folders project notes may be read from, ; separated (default G:\My Drive;F:\Projects;the WoW AddOns folder)
    Run: node hub-worker.mjs */
-import { spawn, spawnSync } from 'child_process';
+import { spawn } from 'child_process';
 import { createRequire } from 'module';
 import { pathToFileURL } from 'url';
 import path from 'path';
@@ -38,16 +38,17 @@ const PC_SCRIPTS = {
   'ship:test': j => ['npx', ['serve', path.join(REPOS, j.args.site || 'Brenelandtest/site')]],
 };
 
-const found = cmd => spawnSync(cmd, ['--version'], { shell: true, stdio: 'ignore' }).status === 0;
-async function bionicUp() { try { return (await fetch(`${BIONIC}/v1/models`)).ok; } catch { return false; } }
+/* async with a time limit: a slow or stuck `claude --version` must never freeze the worker */
+const found = cmd => new Promise(ok => { let p; try { p = spawn(cmd, ['--version'], { shell: true, stdio: 'ignore', windowsHide: true }); } catch { return ok(false); } const t = setTimeout(() => { try { p.kill(); } catch { } ok(false); }, 15000); p.on('error', () => { clearTimeout(t); ok(false); }); p.on('exit', c => { clearTimeout(t); ok(c === 0); }); });
+async function bionicUp() { try { return (await fetch(`${BIONIC}/v1/models`, { signal: AbortSignal.timeout(5000) })).ok; } catch { return false; } }
 const can = [];
 if (await bionicUp()) can.push('pc-model');
 /* Claude Code: on the PATH, or where its Windows installer puts it (%USERPROFILE%\.local\bin), or CLAUDE */
 const CLAUDE = process.env.CLAUDE || [path.join(os.homedir(), '.local', 'bin', process.platform === 'win32' ? 'claude.exe' : 'claude')].find(f => fs.existsSync(f)) || 'claude';
-if (found(`"${CLAUDE}"`)) can.push('claude-code');
-if (found(`"${BLENDER}"`)) can.push('blender');
+if (await found(`"${CLAUDE}"`)) can.push('claude-code');
+if (await found(`"${BLENDER}"`)) can.push('blender');
 can.push('pc-run');
-if (found('git')) can.push('merge');
+if (await found('git')) can.push('merge');
 /* the voice pack: Kokoro, the same model and voices as Wizra's bridge. Uses the copy start-wizra.ps1 already installed in
    %USERPROFILE%\Brenai (or one in the Brenebase folder), so nothing new downloads. Loaded on the first job. */
 const KOKORO_HOMES = [path.join(HERE, '..'), process.env.WIZRA_DIR || path.join(os.homedir(), 'Brenai')];
@@ -75,7 +76,7 @@ console.log(`hub worker: ${HUB}\ncan do: ${can.join(', ')}`);
 setInterval(async () => {
   const has = k => can.includes(k), set = (k, on) => { if (on && !has(k)) { can.push(k); console.log('now can do', k); } if (!on && has(k)) can.splice(can.indexOf(k), 1); };
   set('pc-model', await bionicUp());
-  set('claude-code', found(`"${CLAUDE}"`));
+  set('claude-code', await found(`"${CLAUDE}"`));
   if (!kokoroPath) for (const d of KOKORO_HOMES) { try { kokoroPath = createRequire(path.join(d, 'package.json')).resolve('kokoro-js'); break; } catch { } }
   set('tts', !!kokoroPath);
 }, 60000);
@@ -89,15 +90,15 @@ const run = (cmd, args, cwd, input, onOut) => new Promise(ok => {
 });
 
 /* tell Brenebase what step a job is on, with the last lines of output, at most every 4 seconds */
-let lastPost = 0, tail = [];
 async function progress(j, step, text, force) {
-  if (text) tail = tail.concat(String(text).split(/\r?\n/).filter(Boolean)).slice(-40);
-  if (!force && Date.now() - lastPost < 4000) return; lastPost = Date.now();
-  try { await fetch(`${HUB}/api/worker/progress`, { method: 'POST', headers: H, body: JSON.stringify({ id: j.id, step, log: tail.join('\n') }) }); } catch { /* the result still goes back at the end */ }
+  j._tail ||= []; j._last ||= 0;
+  if (text) j._tail = j._tail.concat(String(text).split(/\r?\n/).filter(Boolean)).slice(-40);
+  if (!force && Date.now() - j._last < 4000) return; j._last = Date.now();
+  try { await fetch(`${HUB}/api/worker/progress`, { method: 'POST', headers: H, body: JSON.stringify({ id: j.id, step, log: j._tail.join('\n') }), signal: AbortSignal.timeout(15000) }); } catch { /* the result still goes back at the end */ }
 }
-async function doJob(j) { tail = []; await progress(j, 'started on the PC', '', true);
+async function doJob(j) { await progress(j, 'started on the PC', '', true);
   if (j.backend === 'pc-model') {
-    const r = await fetch(`${BIONIC}/v1/chat/completions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'system', content: j.system || '' }, ...(j.messages && j.messages.length ? j.messages : [{ role: 'user', content: j.text }])], temperature: 0.8, max_tokens: j.maxTokens || 800 }) });
+    const r = await fetch(`${BIONIC}/v1/chat/completions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'system', content: j.system || '' }, ...(j.messages && j.messages.length ? j.messages : [{ role: 'user', content: j.text }])], temperature: 0.8, max_tokens: j.maxTokens || 800 }), signal: AbortSignal.timeout(300000) });
     const d = await r.json(); return { ok: r.ok, text: d.choices?.[0]?.message?.content || '', error: r.ok ? undefined : JSON.stringify(d).slice(0, 300) };
   }
   if (j.backend === 'claude-code') {
@@ -291,17 +292,29 @@ function wowRoots(f) {
 
 const H = { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' };
 let refused = false;
+/* jobs run side by side so a long one (a Studio picture, Claude Code) never blocks the companion's replies.
+   Jobs that touch a repo or Blender run one at a time. A heartbeat tells Brenebase the worker is alive while it works. */
+const HEAVY = ['claude-code', 'merge', 'blender', 'pc-run'];
+const busy = new Map();
+const MAX = +process.env.WORKER_JOBS || 4;
+setInterval(() => { fetch(`${HUB}/api/worker/progress`, { method: 'POST', headers: H, body: JSON.stringify({ busy: [...busy.values()].map(j => j.label) }), signal: AbortSignal.timeout(15000) }).catch(() => { }); }, 10000);
+async function finish(job) {
+  console.log(`job ${job.id}: ${job.label}`);
+  const out = await doJob(job).catch(e => ({ ok: false, error: String(e.message || e) }));
+  for (let n = 0; n < 5; n++) { try { await fetch(`${HUB}/api/worker/done`, { method: 'POST', headers: H, body: JSON.stringify({ id: job.id, ...out }), signal: AbortSignal.timeout(120000) }); break; } catch { await new Promise(s => setTimeout(s, 5000)); } }
+  console.log(`  ${job.id} ${out.ok ? 'done' : 'failed: ' + String(out.error || '').slice(0, 200)}`);
+  busy.delete(job.id);
+}
 for (;;) {
   try {
-    const r = await fetch(`${HUB}/api/worker/next?can=${can.join(',')}`, { headers: H });
+    if (busy.size >= MAX) { await new Promise(s => setTimeout(s, 2000)); continue; }
+    const heavyBusy = [...busy.values()].some(j => HEAVY.includes(j.backend));
+    const offer = can.filter(k => !(heavyBusy && HEAVY.includes(k)));
+    const r = await fetch(`${HUB}/api/worker/next?can=${offer.join(',')}&has=${can.join(',')}`, { headers: H, signal: AbortSignal.timeout(20000) });
     if (r.status === 401) { if (!refused) console.log('PC key refused: HUB_WORKER_TOKEN on this PC does not match BRENEBASE_PC_KEY. Checking again every 5 minutes.'); refused = true; await new Promise(s => setTimeout(s, 300000)); continue; }
     refused = false;
     const { job } = await r.json();
-    if (job) {
-      console.log(`job ${job.id}: ${job.label}`);
-      const out = await doJob(job).catch(e => ({ ok: false, error: String(e.message || e) }));
-      await fetch(`${HUB}/api/worker/done`, { method: 'POST', headers: H, body: JSON.stringify({ id: job.id, ...out }) });
-      console.log(`  ${out.ok ? 'done' : 'failed'}`);
-    } else await new Promise(s => setTimeout(s, 4000));
+    if (job) { busy.set(job.id, job); finish(job); }
+    else await new Promise(s => setTimeout(s, 3000));
   } catch (e) { console.log('hub not reachable, retrying'); await new Promise(s => setTimeout(s, 10000)); }
 }

@@ -302,13 +302,13 @@ http.createServer(async (req, res) => {
     }
 
     /* ---- live progress from the PC worker ---- */
-    if (p === '/api/worker/progress' && req.method === 'POST') { if (!isWorker(req)) return send(res, 401, {}); worker.seen = Date.now(); const b = await body(req); const j = L.get(b.id); if (j) { j.step = String(b.step || '').slice(0, 120); j.stepAt = Date.now(); j.live = String(b.log || '').slice(-6000); if (!j.startedAt) j.startedAt = Date.now(); } return send(res, 200, { ok: true }); }
+    if (p === '/api/worker/progress' && req.method === 'POST') { if (!isWorker(req)) return send(res, 401, {}); worker.seen = Date.now(); const b = await body(req); if (Array.isArray(b.busy)) worker.busy = b.busy.map(String).slice(0, 10); const j = L.get(b.id); if (j) { j.step = String(b.step || '').slice(0, 120); j.stepAt = Date.now(); j.live = String(b.log || '').slice(-6000); if (!j.startedAt) j.startedAt = Date.now(); } return send(res, 200, { ok: true }); }
 
     /* ---- the PC worker ---- */
     if (p.startsWith('/api/worker/')) {
       if (!isWorker(req)) return send(res, 401, { error: 'worker token refused' });
       worker.seen = Date.now();
-      if (p === '/api/worker/next') { worker.can = (u.searchParams.get('can') || '').split(',').filter(Boolean); const nj = L.next(worker.can); if (nj) { nj.startedAt = Date.now(); nj.step = 'picked up by the PC'; } return send(res, 200, { job: nj }); }
+      if (p === '/api/worker/next') { const offer = (u.searchParams.get('can') || '').split(',').filter(Boolean); worker.can = u.searchParams.has('has') ? (u.searchParams.get('has') || '').split(',').filter(Boolean) : offer; const nj = L.next(offer); if (nj) { nj.startedAt = Date.now(); nj.step = 'picked up by the PC'; } return send(res, 200, { job: nj }); }
       if (p === '/api/worker/done' && req.method === 'POST') { const b = await body(req); const j = L.get(b.id); if (!j) return send(res, 404, {}); if (j.backend === 'readdir') { const n = b.ok ? U.fromPcFiles(b.result && b.result.files, j.dir) : 0; return send(res, 200, L.update(j.id, { status: b.ok ? 'done' : 'failed', error: b.error, result: { text: `${n} new update(s)` } }, 'update folder read')); }
       if (j.backend === 'read') { if (b.ok && b.result && b.result.foundAt && b.result.foundAt !== j.source.path) PJ.remember(j.project, j.source.path, b.result.foundAt); const added = PJ.recordPc(j.project, j.source, b.ok, b.text || '', b.error); return send(res, 200, L.update(j.id, { status: b.ok ? 'done' : 'failed', error: b.error, result: { text: b.ok ? `${added.length} new note(s)` : '' } }, 'notes read')); } const text = b.text != null ? rejoin(b.text, j.held || []) : undefined; if (j.companion && b.ok) CP.add('them', b.text || '', { job: j.id, convo: j.convo }); else if (j.companion) CP.add('note', `No reply: ${b.error || 'the PC model did not answer'}`, { convo: j.convo });
         if (b.result && b.result.audio64) { fs.mkdirSync(IMG_DIR, { recursive: true }); const f = `${j.id}.wav`; fs.writeFileSync(path.join(IMG_DIR, f), Buffer.from(b.result.audio64, 'base64')); b.result.audio = `/api/img/${f}`; delete b.result.audio64; if (j.of) { const src = L.get(j.of); if (src) L.update(src.id, { result: { ...src.result, audio: b.result.audio } }, 'read aloud ready'); } }
@@ -413,7 +413,7 @@ http.createServer(async (req, res) => {
     }
     if (p === '/api/tags' && req.method === 'GET') return send(res, 200, { tags: TG.tags() });
     if (p === '/api/tags' && req.method === 'POST') { const b = await body(req); return send(res, 200, { tags: TG.saveTags(b.tags) }); }
-    if (p === '/api/pc' && req.method === 'GET') return send(res, 200, { ...(await PA.state()), worker: { online: workerOnline(), can: worker.can }, actions: PA.ACTIONS });
+    if (p === '/api/pc' && req.method === 'GET') return send(res, 200, { ...(await PA.state()), worker: { online: workerOnline(), can: worker.can, busy: worker.busy || [] }, actions: PA.ACTIONS });
     if (p === '/api/pc/do' && req.method === 'POST') { const b = await body(req); return send(res, 200, await PA.call(b.action)); }
     if (p === '/api/projects' && req.method === 'GET') return send(res, 200, { projects: PJ.cards().map(c => ({ ...c, live: PJ.liveFor(c.id), updates: U.list(c.id, 20) })), unassigned: U.list(null, 200).filter(u => !u.project || !PJ.card(u.project)).slice(0, 20) });
     if (p === '/api/updates' && req.method === 'GET') return send(res, 200, { updates: U.list(u.searchParams.get('project'), 100) });
