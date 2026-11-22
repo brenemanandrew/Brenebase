@@ -8,7 +8,7 @@
 header{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap;position:sticky;top:0;background:var(--bg);z-index:5}
 #lights .dot{margin-left:6px}.dot.mid{background:var(--warn)}
 header b{font-size:18px}.dot{width:9px;height:9px;border-radius:50%;background:var(--bad);display:inline-block}.dot.on{background:var(--ok)}
-html,body{overflow-x:hidden;max-width:100%}nav{margin-left:auto;display:flex;gap:6px;max-width:100%;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}nav::-webkit-scrollbar{display:none}nav button{flex:none}@media (max-width:760px){nav{margin-left:0;width:100%}}nav button{background:none;border:1px solid var(--line);color:var(--dim);border-radius:8px;padding:5px 10px}nav button.on{color:var(--text);border-color:var(--acc)}
+html,body{overflow-x:hidden;max-width:100%}nav{margin-left:auto;display:flex;flex-wrap:wrap;gap:6px;max-width:100%}nav .more{display:none}nav.open .more{display:inline-block}nav::-webkit-scrollbar{display:none}nav button{flex:none}@media (max-width:760px){nav{margin-left:0;width:100%}}nav button{background:none;border:1px solid var(--line);color:var(--dim);border-radius:8px;padding:5px 10px}nav button.on{color:var(--text);border-color:var(--acc)}
 main{max-width:1100px;margin:0 auto;padding:14px}@media (max-width:600px){main{padding:10px 8px}.card{padding:10px}}textarea,input,select{max-width:100%}img{max-width:100%}
 textarea{width:100%;min-height:96px;background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:12px;font:inherit;resize:vertical}
 button.go{background:var(--acc);color:#081020;border:0;border-radius:10px;padding:10px 16px;font-weight:600}
@@ -57,15 +57,15 @@ details.card>summary{cursor:pointer;list-style:none}details.card>summary::-webki
 .pnum{display:inline-block;width:22px;height:22px;border-radius:50%;background:var(--acc);color:#081020;text-align:center;font-weight:700;font-size:13px;line-height:22px}
 </style></head><body>
 <header><b>Brenebase</b><span class="dim" id="lights" style="cursor:pointer" title="Open the PC tab"><span id="adot" class="dot"></span> PC <span id="mdot" class="dot"></span> Model <span id="wdot" class="dot"></span> Worker</span>
-<nav><button data-tab="chat" class="on">&#128172; Chat</button><button data-tab="send">Send</button><button data-tab="jobs">Jobs</button><button data-tab="images">Images</button><button data-tab="companion" id="cpTab">Companion</button><button data-tab="projects">Projects</button><button data-tab="pc">PC</button><button data-tab="tools">Tools</button></nav></header>
-<div id="tabbar" style="display:flex;gap:6px;overflow-x:auto;padding:8px 14px;border-bottom:1px solid var(--line)"></div>
+<nav><button data-tab="chat" class="on">&#128172; Chat</button><button data-tab="jobs">&#128203; Jobs</button><button data-tab="companion" id="cpTab">Companion</button><button data-tab="images">&#128444; Images</button><button id="navMore" aria-label="More">&#9776;</button><button data-tab="projects" class="more">&#128193; Projects</button><button data-tab="pc" class="more">&#128187; PC</button><button data-tab="tools" class="more">&#128295; Tools</button><button data-tab="send" class="more">&#9881; Send (advanced)</button></nav></header>
+<div id="tabbar" style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 14px;border-bottom:1px solid var(--line)"></div>
 <div id="tabNew" class="card" style="display:none;max-width:720px;margin:8px auto"><div class="row" style="margin:0"><input id="tnName" placeholder="Tab name" style="flex:1;min-width:120px;padding:8px;border-radius:8px;border:1px solid var(--line);background:#0f1116;color:var(--text)"><select id="tnProj"></select><button class="go" id="tnAdd">Add tab</button><button class="sm" id="tnX">Cancel</button></div><div class="dim">Pick a project to tie everything in this tab to it, or leave it blank for a plain conversation.</div></div>
 <main>
 <div id="login" class="card"><p>Password</p><div class="row"><input id="pw" type="password" style="flex:1;padding:9px;border-radius:8px;border:1px solid var(--line);background:#0f1116;color:var(--text)"><button class="go" id="loginBtn">Go</button></div><div id="loginMsg" class="st-failed"></div></div>
 
 <section id="chat">
   <div id="now"></div>
-  <div class="pills" id="sendProj" style="flex-wrap:nowrap;overflow-x:auto;margin:0 0 8px"></div>
+  <div id="sendProj" style="margin:0 0 8px"></div>
   <div id="chatFeed"></div>
   <div id="chatBox" class="card" style="position:sticky;bottom:8px;margin-top:10px">
     <div id="chatPicPrev"></div>
@@ -141,7 +141,7 @@ details.card>summary{cursor:pointer;list-style:none}details.card>summary::-webki
         </div>
         <div class="pills" id="cpModes"></div></div>
     </div>
-    <div id="cpConvos" style="display:flex;gap:6px;overflow-x:auto;margin:10px 0 0"></div>
+    <div id="cpConvos" style="display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 0"></div>
     <div id="cpLog" style="max-height:46vh;overflow:auto;margin:10px 0"></div>
     <div id="cpPicPrev"></div>
     <textarea id="cpIn" placeholder="Say it." style="min-height:70px"></textarea>
@@ -179,7 +179,8 @@ const md = t => { const e = String(t || '').replace(/[&<>"]/g, c => ({ '&': '&am
   }).join('')).join(''); };
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-document.querySelectorAll('nav button').forEach(b => b.onclick = () => { document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b)); for (const s of ['chat', 'send', 'jobs', 'images', 'companion', 'projects', 'pc', 'tools']) $(s).style.display = s === b.dataset.tab ? '' : 'none'; if (b.dataset.tab === 'jobs') jobs(); if (b.dataset.tab === 'chat') chat(); if ($('rxBubble')) $('rxBubble').style.visibility = b.dataset.tab === 'chat' ? 'hidden' : ''; if (b.dataset.tab === 'images') imTab(); if (b.dataset.tab === 'projects') projects(); if (b.dataset.tab === 'pc') pc(); if (b.dataset.tab === 'companion') companion(); tabs(); });
+document.querySelectorAll('nav button[data-tab]').forEach(b => b.onclick = () => { if (b.classList.contains('more')) document.querySelector('nav').classList.remove('open'); document.querySelectorAll('nav button[data-tab]').forEach(x => x.classList.toggle('on', x === b)); $('navMore').classList.toggle('on', b.classList.contains('more')); for (const s of ['chat', 'send', 'jobs', 'images', 'companion', 'projects', 'pc', 'tools']) $(s).style.display = s === b.dataset.tab ? '' : 'none'; if (b.dataset.tab === 'jobs') jobs(); if (b.dataset.tab === 'chat') chat(); if ($('rxBubble')) $('rxBubble').style.visibility = b.dataset.tab === 'chat' ? 'hidden' : ''; if (b.dataset.tab === 'images') imTab(); if (b.dataset.tab === 'projects') projects(); if (b.dataset.tab === 'pc') pc(); if (b.dataset.tab === 'companion') companion(); tabs(); });
+$('navMore').onclick = () => document.querySelector('nav').classList.toggle('open');
 $('loginBtn').onclick = async () => {
   const r = await fetch('/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: $('pw').value }) }).catch(() => null);
   if (!r) { $('loginMsg').textContent = 'Brenebase did not answer. Check your connection.'; return; }
@@ -270,8 +271,8 @@ let PLAN = null, SENDPJ = localStorage.getItem('sendProj') || '';
 /* the project you are working in: everything sent from here uses it (its rules, what is known, private stays local) */
 function sendProjPills() {
   const list = PJS_ALL || []; if (SENDPJ && !list.some(c => c.id === SENDPJ)) SENDPJ = '';
-  $('sendProj').innerHTML = `<button data-p="" class="${!SENDPJ ? 'on' : ''}">Any project</button>` + list.map(c => `<button data-p="${c.id}" class="${SENDPJ === c.id ? 'on' : ''}" style="white-space:nowrap">${esc(c.name.split(' (')[0])}</button>`).join('');
-  $('sendProj').querySelectorAll('button').forEach(b => b.onclick = () => { SENDPJ = b.dataset.p; localStorage.setItem('sendProj', SENDPJ); sendProjPills(); if ($('proj')) $('proj').value = SENDPJ; });
+  $('sendProj').innerHTML = `<label class="chip" style="padding:4px 10px">&#128193; <select id="projPick" style="border:0;background:none;color:var(--text);padding:0">${['<option value="">Any project</option>', ...list.map(c => `<option value="${c.id}"${SENDPJ === c.id ? ' selected' : ''}>${esc(c.name.split(' (')[0])}</option>`)].join('')}</select></label>`;
+  $('projPick').onchange = () => { SENDPJ = $('projPick').value; localStorage.setItem('sendProj', SENDPJ); if ($('proj')) $('proj').value = SENDPJ; };
 }
 const toolOpts = sel => CAT ? CAT.tools.map(t => Object.entries(t.modes).map(([k, m]) => `<option value="${t.id}/${k}"${sel === t.id + '/' + k ? ' selected' : ''}>${esc(t.name)}: ${esc(m.label)}</option>`).join('')).join('') : '';
 function drawPlan() {
@@ -397,7 +398,7 @@ function jobCard(j) {
   ${r.audio ? `<audio controls src="${esc(r.audio)}" style="width:100%;margin-top:6px"></audio>` : ''}
   ${output}
   ${j.partJobs ? `<details${j.status !== 'done' ? ' open' : ''}><summary class="dim">The parts</summary>${j.partJobs.map(jobCard).join('')}</details>` : ''}
-  <div class="row">${btns}<button class="sm" onclick="checkJob('${j.id}', this)">Check status</button>${j.status === 'failed' ? `<button class="sm" onclick="retryJob('${j.id}')">Retry</button>` : ''}${j.status === 'done' && j.backend === 'claude-code' && r.branch ? `<button class="sm" onclick="shipJob('${j.id}', this)">${/brenebase$/i.test(j.repo || '') ? '&#128640; Merge and deploy' : '&#128230; Hand over'}</button>` : ''}${j.status === 'done' && ['sd-image', 'studio-image'].includes(j.backend) ? `<button class="sm" onclick="againJob('${j.id}').then(jobs)">Make again</button>` : ''}${j.status === 'done' && r.text ? `<button class="sm" onclick="speak('${j.id}', this)">&#128266; Read aloud</button>` : ''}</div></div></div>`;
+  <div class="row">${btns}${j.status === 'failed' ? `<button class="sm" onclick="retryJob('${j.id}')">Retry</button>` : ''}${j.status === 'done' && j.backend === 'claude-code' && r.branch ? `<button class="sm" onclick="shipJob('${j.id}', this)">${/brenebase$/i.test(j.repo || '') ? '&#128640; Merge and deploy' : '&#128230; Hand over'}</button>` : ''}${j.status === 'done' && ['sd-image', 'studio-image'].includes(j.backend) ? `<button class="sm" onclick="againJob('${j.id}').then(jobs)">Make again</button>` : ''}${j.status === 'done' && r.text ? `<button class="sm" onclick="speak('${j.id}', this)">&#128266; Read aloud</button>` : ''}</div></div></div>`;
 }
 /* job cards fold up by tapping their header. Done cards start folded; whatever you open or close is remembered. */
 const JOB_FOLD = JSON.parse(localStorage.getItem('jobFold') || '{}');
@@ -729,7 +730,7 @@ async function pc(quiet) {
   const helpers = st ? Object.entries(st.helpers).map(([k, h]) => `<div class="row" style="margin:4px 0"><span class="${h.running ? 'st-done' : 'st-waiting'}">${h.running ? 'running' : h.setUp ? 'stopped' : 'not set up'}</span><b>${esc(h.label)}</b>${h.setUp ? (h.running ? btn('stop:' + k, 'Stop') : btn('start:' + k, 'Start')) + btn('logs:' + k, 'Log') : ''}</div>`).join('') : '';
   $('pcBox').innerHTML = `<div class="card"><div class="row" style="margin:0"><b>${st ? esc(st.pc) : 'Your PC'}</b><span class="tag">${d.reach === 'tailscale' ? 'Tailscale, direct' : d.reach === 'polling' ? 'reached by polling' : 'offline'}</span>${d.reach !== 'tailscale' && !d.tailscaleSetUp ? '<span class="tag">Tailscale not set up on Brenebase</span>' : ''}</div>
     ${st ? `<p class="dim">Checked ${d.statusAge != null ? d.statusAge + ' s ago' : 'just now'}. Up ${Math.round(st.uptimeMin / 60)} h.</p>` : '<p class="dim">No word from the PC agent. Is the PC on and awake, and the agent installed?</p>'}
-    <div class="row">${btn('start-all', 'Start everything')}${btn('stop-all', 'Stop everything')}${btn('status', 'Refresh')}${btn('update', 'Update now')}</div></div>
+    <div class="row">${btn('start-all', 'Start everything')}${btn('stop-all', 'Stop everything')}${btn('update', 'Update now')}</div></div>
     ${st ? `<div class="card"><div class="row" style="margin:0"><span class="${loaded ? 'st-done' : 'st-waiting'}">${loaded ? 'loaded' : st.model.server ? 'server up, no model' : 'off'}</span><b>Model</b><span class="dim">${esc(st.model.name)}, ${st.model.context} context</span>${loaded ? btn('model-stop', 'Unload') : btn('model-start', 'Load')}</div><div class="row" style="margin:6px 0 0"><span class="dim" style="font-size:13px">&#128065; Picture reader</span>${btn('vision-get', 'Get it')}${btn('logs:vision', 'Log')}</div>${loaded ? `<div class="dim">${st.model.loaded.map(esc).join(', ')}</div>` : ''}${st.model.lmsFound ? '' : '<p class="st-failed">lms not found on the PC (set LMS)</p>'}</div><div class="card">${helpers}</div>` : ''}
     <div class="card"><div class="row" style="margin:0"><span class="${d.worker.online ? 'st-done' : 'st-waiting'}">${d.worker.online ? 'online' : 'offline'}</span><b>Worker</b><span class="dim">${esc((d.worker.can || []).join(', '))}</span></div>${(d.worker.busy || []).length ? `<div class="dim">Working on: ${d.worker.busy.map(esc).join('; ')}</div>` : ''}${!d.worker.online && st && st.helpers && st.helpers.worker && (st.helpers.worker.log || []).length ? `<div class="dim">Worker's last lines on the PC:</div><pre style="white-space:pre-wrap;font-size:12px">${esc(st.helpers.worker.log.join('\n'))}</pre>` : ''}${st && st.files ? `<div class="dim">PC files: ${Object.entries(st.files).map(([k, v]) => esc(k.split('/').pop() + ' ' + v)).join(', ')}</div>` : ''}</div>
     <pre id="pcOut"${PCOUT ? '' : ' style="display:none"'}>${esc(PCOUT)}</pre>

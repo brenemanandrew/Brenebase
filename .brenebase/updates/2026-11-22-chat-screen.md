@@ -17,3 +17,10 @@ title: One chat screen that works out the jobs, runs them and shows the results
 
 ## Not tested
 - With Claude planning on the live site, and on Andrew's phone
+
+## Done (consolidation)
+- Nothing scrolls sideways on a phone: the top row shows Chat, Jobs, the companion, Images and a menu button that opens Projects, PC, Tools and Send (advanced) on a second line; the project pills became one "Any project" picker; conversation tabs and the companion's conversations wrap instead of scrolling
+- Removed buttons that did nothing useful: Check status on jobs and Refresh on the PC tab (both refresh by themselves)
+
+## Tested
+- Emulated Pixel 7: no element scrolls sideways on any tab; the menu opens and closes; picking PC from it works; no page errors; node test.mjs 61/61
