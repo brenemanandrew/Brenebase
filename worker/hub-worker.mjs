@@ -42,7 +42,9 @@ const found = cmd => spawnSync(cmd, ['--version'], { shell: true, stdio: 'ignore
 async function bionicUp() { try { return (await fetch(`${BIONIC}/v1/models`)).ok; } catch { return false; } }
 const can = [];
 if (await bionicUp()) can.push('pc-model');
-if (found('claude')) can.push('claude-code');
+/* Claude Code: on the PATH, or where its Windows installer puts it (%USERPROFILE%\.local\bin), or CLAUDE */
+const CLAUDE = process.env.CLAUDE || [path.join(os.homedir(), '.local', 'bin', process.platform === 'win32' ? 'claude.exe' : 'claude')].find(f => fs.existsSync(f)) || 'claude';
+if (found(`"${CLAUDE}"`)) can.push('claude-code');
 if (found(`"${BLENDER}"`)) can.push('blender');
 can.push('pc-run');
 if (found('git')) can.push('merge');
@@ -87,7 +89,7 @@ async function doJob(j) {
     if (!fs.existsSync(repo)) return { ok: false, error: `No checkout at ${repo}. Clone it there or set REPOS.` };
     const branch = j.parent ? `hub/${j.parent}` : `hub/${j.id}`;
     await run('git', ['checkout', '-B', branch], repo);
-    const r = await run('claude', ['-p', '--output-format', 'text'], repo, j.prompt);
+    const r = await run(CLAUDE, ['-p', '--output-format', 'text'], repo, j.prompt);
     await run('git', ['add', '-A'], repo); await run('git', ['commit', '-m', `hub: ${j.label}`], repo);
     const diff = await run('git', ['diff', '--stat', 'HEAD~1'], repo);
     let merge = null; try { merge = JSON.parse(fs.readFileSync(path.join(repo, 'hub-merge.json'), 'utf8')); } catch { /* not written; the hub also looks in the reply */ }
