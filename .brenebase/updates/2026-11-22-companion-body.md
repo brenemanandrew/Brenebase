@@ -33,3 +33,6 @@ title: Companion full body, look editor, pictures, icon row
 
 ## Tested (later the same day)
 - Headless Chromium: project pills show and the pick is kept; a shoulder reaction saved, a tap on her shoulder in the full view showed the face, the move and the bubble and sent the action; no page errors; node test.mjs 54/54
+
+## Fixed
+- Deploy crashed (site down, 503): the Dockerfile listed modules by name and think.mjs was missing. It now copies every .mjs file
