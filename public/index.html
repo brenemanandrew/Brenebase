@@ -26,6 +26,10 @@ select{background:var(--card);color:var(--text);border:1px solid var(--line);bor
 pre{white-space:pre-wrap;word-break:break-word;background:#0f1116;border-radius:8px;padding:10px;font-size:13px;max-height:340px;overflow:auto}
 h3{margin:18px 0 6px}.mode{margin:4px 0 4px 10px}
 #login{display:none}
+#chatFeed .me{display:flex;justify-content:flex-end;margin:14px 0 6px}#chatFeed .me>div{background:#24324a;border-radius:14px;padding:9px 12px;max-width:85%;white-space:pre-wrap}
+#chatFeed .bb{margin:6px 0 16px}#chatFeed .bb .who{font-size:12px;color:var(--dim);margin-bottom:4px}#chatFeed .part{border-left:3px solid var(--line);padding:4px 0 6px 10px;margin:8px 0}#chatFeed .part.done{border-color:var(--ok)}#chatFeed .part.failed{border-color:var(--bad)}#chatFeed .part.running,#chatFeed .part.queued{border-color:var(--acc)}#chatFeed .part.waiting{border-color:var(--warn)}
+#sendProj button{white-space:nowrap;flex:none}
+#chatFeed .pics{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;margin-top:6px}#chatFeed .pics img{width:100%;border-radius:10px}
 .chip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:999px;padding:2px 10px;font-size:13px;color:var(--dim);margin:2px 4px 2px 0}.chip.ok{color:var(--ok);border-color:var(--ok)}.chip.bad{color:var(--bad);border-color:var(--bad)}.chip.warn{color:var(--warn);border-color:var(--warn)}.chip button{background:none;border:0;color:inherit;padding:0 0 0 2px;font-size:14px;cursor:pointer}
 details.card>summary{cursor:pointer;list-style:none}details.card>summary::-webkit-details-marker{display:none}.ico{font-size:20px;margin-right:6px}
 .one{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
@@ -53,15 +57,23 @@ details.card>summary{cursor:pointer;list-style:none}details.card>summary::-webki
 .pnum{display:inline-block;width:22px;height:22px;border-radius:50%;background:var(--acc);color:#081020;text-align:center;font-weight:700;font-size:13px;line-height:22px}
 </style></head><body>
 <header><b>Brenebase</b><span class="dim" id="lights" style="cursor:pointer" title="Open the PC tab"><span id="adot" class="dot"></span> PC <span id="mdot" class="dot"></span> Model <span id="wdot" class="dot"></span> Worker</span>
-<nav><button data-tab="send" class="on">Send</button><button data-tab="jobs">Jobs</button><button data-tab="images">Images</button><button data-tab="companion" id="cpTab">Companion</button><button data-tab="projects">Projects</button><button data-tab="pc">PC</button><button data-tab="tools">Tools</button></nav></header>
+<nav><button data-tab="chat" class="on">&#128172; Chat</button><button data-tab="send">Send</button><button data-tab="jobs">Jobs</button><button data-tab="images">Images</button><button data-tab="companion" id="cpTab">Companion</button><button data-tab="projects">Projects</button><button data-tab="pc">PC</button><button data-tab="tools">Tools</button></nav></header>
 <div id="tabbar" style="display:flex;gap:6px;overflow-x:auto;padding:8px 14px;border-bottom:1px solid var(--line)"></div>
 <div id="tabNew" class="card" style="display:none;max-width:720px;margin:8px auto"><div class="row" style="margin:0"><input id="tnName" placeholder="Tab name" style="flex:1;min-width:120px;padding:8px;border-radius:8px;border:1px solid var(--line);background:#0f1116;color:var(--text)"><select id="tnProj"></select><button class="go" id="tnAdd">Add tab</button><button class="sm" id="tnX">Cancel</button></div><div class="dim">Pick a project to tie everything in this tab to it, or leave it blank for a plain conversation.</div></div>
 <main>
 <div id="login" class="card"><p>Password</p><div class="row"><input id="pw" type="password" style="flex:1;padding:9px;border-radius:8px;border:1px solid var(--line);background:#0f1116;color:var(--text)"><button class="go" id="loginBtn">Go</button></div><div id="loginMsg" class="st-failed"></div></div>
 
-<section id="send">
+<section id="chat">
   <div id="now"></div>
   <div class="pills" id="sendProj" style="flex-wrap:nowrap;overflow-x:auto;margin:0 0 8px"></div>
+  <div id="chatFeed"></div>
+  <div id="chatBox" class="card" style="position:sticky;bottom:8px;margin-top:10px">
+    <div id="chatPicPrev"></div>
+    <textarea id="chatIn" placeholder="Ask for anything: a picture, code, a plan, a question. Paste a picture to include it." style="min-height:64px"></textarea>
+    <div class="row" style="margin:6px 0 0"><button class="go" id="chatMic" style="background:var(--card);color:var(--text);border:1px solid var(--line)">&#127908;</button><span class="dim" style="flex:1;font-size:13px" id="chatHint">Brenebase picks the tools and skills and runs it. Anything that spends or ships asks first.</span><button class="go" id="chatGo">Send</button></div>
+  </div>
+</section>
+<section id="send" style="display:none">
   <textarea id="thought" placeholder="Say or type what you want. Brenebase works out the parts and where each goes."></textarea>
   <div id="sendPicPrev"></div>
   <div id="heard" class="dim" style="min-height:1.2em;font-style:italic"></div>
@@ -167,7 +179,7 @@ const md = t => { const e = String(t || '').replace(/[&<>"]/g, c => ({ '&': '&am
   }).join('')).join(''); };
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-document.querySelectorAll('nav button').forEach(b => b.onclick = () => { document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b)); for (const s of ['send', 'jobs', 'images', 'companion', 'projects', 'pc', 'tools']) $(s).style.display = s === b.dataset.tab ? '' : 'none'; if (b.dataset.tab === 'jobs') jobs(); if (b.dataset.tab === 'images') imTab(); if (b.dataset.tab === 'projects') projects(); if (b.dataset.tab === 'pc') pc(); if (b.dataset.tab === 'companion') companion(); tabs(); });
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => { document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b)); for (const s of ['chat', 'send', 'jobs', 'images', 'companion', 'projects', 'pc', 'tools']) $(s).style.display = s === b.dataset.tab ? '' : 'none'; if (b.dataset.tab === 'jobs') jobs(); if (b.dataset.tab === 'chat') chat(); if ($('rxBubble')) $('rxBubble').style.visibility = b.dataset.tab === 'chat' ? 'hidden' : ''; if (b.dataset.tab === 'images') imTab(); if (b.dataset.tab === 'projects') projects(); if (b.dataset.tab === 'pc') pc(); if (b.dataset.tab === 'companion') companion(); tabs(); });
 $('loginBtn').onclick = async () => {
   const r = await fetch('/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: $('pw').value }) }).catch(() => null);
   if (!r) { $('loginMsg').textContent = 'Brenebase did not answer. Check your connection.'; return; }
@@ -220,6 +232,39 @@ $('imGo').onclick = async () => {
   finally { $('imGo').disabled = false; }
 };
 setInterval(() => { if ($('images').style.display !== 'none') imTab().catch(() => { }); }, 5000);
+/* ---- Chat: one box; Brenebase works out the parts and runs them; results show here ---- */
+var CHATPIC = null, chatTimer = 0;
+const chatPicShow = pasteTo('chatIn', 'chatPicPrev', d => { CHATPIC = d; }, 'Goes with this message');
+function chatPart(k) {
+  const r = k.result || {}, st = k.status, pg = jobProgress(k);
+  const body = st === 'done' ? `${(r.images || []).length ? `<div class="pics">${r.images.map(u => `<a href="${esc(u)}" target="_blank"><img src="${esc(u)}"></a>`).join('')}</div>` : ''}${r.text && !(r.images || []).length ? `<div class="md">${md(String(r.text).slice(0, 6000))}</div>` : ''}${r.link ? `<a href="${esc(r.link)}" target="_blank" style="color:var(--acc)">Open</a>` : ''}${r.audio ? `<audio controls src="${esc(r.audio)}" style="width:100%"></audio>` : ''}${r.doll ? `<button class="sm" onclick="openDoll('${k.id}')">Open in the look editor</button>` : ''}${r.branch ? `<div class="dim" style="font-size:13px">Branch ${esc(r.branch)}</div>` : ''}`
+    : st === 'failed' ? `<div class="st-failed" style="font-size:14px">${esc(((k.report || {}).blocked || [k.error || 'It failed.'])[0])}</div>`
+    : st === 'waiting' ? `<div class="st-waiting" style="font-size:14px">Waiting for your OK: ${esc(k.does || 'this spends credits or changes something')}</div>` : (pg ? progressBar(pg) : `<div class="dim" style="font-size:13px">${esc(k.step || (st === 'queued' ? 'Waiting for the PC' : 'Working'))}</div>`);
+  const btns = (st === 'waiting' ? `<button class="sm" onclick="act('${k.id}','approve').then(chat)">OK, run it</button>` : '') + (st === 'failed' ? `<button class="sm" onclick="retryJob('${k.id}').then(chat)">Retry</button>` : '') + (st === 'done' && ['sd-image', 'studio-image'].includes(k.backend) ? `<button class="sm" onclick="againJob('${k.id}').then(chat)">Make again</button>` : '') + (st === 'done' && k.backend === 'claude-code' && r.branch ? `<button class="sm" onclick="shipJob('${k.id}', this)">${/brenebase$/i.test(k.repo || '') ? '&#128640; Merge and deploy' : '&#128230; Hand over'}</button>` : '') + (['queued', 'running', 'waiting'].includes(st) ? `<button class="sm" onclick="act('${k.id}','cancel').then(chat)">Cancel</button>` : '');
+  const sk = (k.report && k.report.skills) || k.plannedSkills || [];
+  return `<div class="part ${st}"><div class="row" style="margin:0 0 4px"><b style="font-size:14px">${esc(k.label)}</b>${sk.map(x => `<span class="chip">${esc(x)}</span>`).join('')}</div>${body}${btns ? `<div class="row" style="margin:6px 0 0">${btns}</div>` : ''}</div>`;
+}
+function chatTurn(t) {
+  const kids = t.partJobs || [], pend = (t.pending || []).map(w => `<div class="part waiting"><b style="font-size:14px">${esc(w.pt.label || w.pt.tool)}</b><div class="dim" style="font-size:13px">Waits for part ${w.needs.map(n => n + 1).join(' and ')}</div></div>`).join('');
+  return `<div class="me"><div>${t.pic ? `<img src="${esc(t.pic.url)}" style="max-width:160px;border-radius:8px;display:block;margin-bottom:4px">` : ''}${esc(t.text)}</div></div>
+    <div class="bb"><div class="who">Brenebase${t.summary ? ': ' + esc(t.summary) : ''}${t.plannedBy ? ` <span class="chip">${esc({ claude: 'planned by Claude', 'pc-model': 'planned on your PC', rules: 'planned by rules' }[t.plannedBy] || t.plannedBy)}</span>` : ''}</div>${t.question ? `<div class="st-waiting">${esc(t.question)}</div>` : ''}${kids.map(chatPart).join('')}${pend}</div>`;
+}
+async function chat() {
+  clearTimeout(chatTimer);
+  const d = await api('/api/chat' + (TAB ? `?thread=${TAB}` : ''));
+  const atEnd = innerHeight + scrollY >= document.body.scrollHeight - 80;
+  $('chatFeed').innerHTML = d.turns.length ? d.turns.map(chatTurn).join('') : `<div class="dim" style="padding:20px 4px">Ask for anything. For example: "make 2 anime pictures of a lighthouse at sunset", "fix the bag frame in SUI", "plan my week", "write an A3 for mispicks".</div>`;
+  if (atEnd) scrollTo(0, document.body.scrollHeight);
+  if (d.turns.some(t => ['running', 'queued', 'waiting'].includes(t.status) || (t.partJobs || []).some(k => ['running', 'queued'].includes(k.status)))) chatTimer = setTimeout(() => { if ($('chat').style.display !== 'none') chat(); }, 3000);
+}
+$('chatGo').onclick = async () => {
+  const text = $('chatIn').value.trim(); if (!text && !CHATPIC) return;
+  $('chatGo').disabled = true; $('chatHint').textContent = 'Working out who does what...';
+  try { const r = await api('/api/chat', { text, image: CHATPIC || undefined, project: SENDPJ || undefined, thread: TAB || undefined }); if (r.error) $('chatHint').textContent = r.error; else { $('chatIn').value = ''; chatPicShow(null); $('chatHint').textContent = 'Brenebase picks the tools and skills and runs it. Anything that spends or ships asks first.'; } await chat(); scrollTo(0, document.body.scrollHeight); }
+  finally { $('chatGo').disabled = false; }
+};
+$('chatIn').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !('ontouchstart' in window)) { e.preventDefault(); $('chatGo').click(); } });
+$('chatMic').onclick = () => { if (listening && micTarget === 'chatIn') return micOff(); if (listening) micOff(); micTarget = 'chatIn'; micOn(); };
 /* ---- Go: Brenebase thinks about the whole request, shows the plan, Run sends it ---- */
 let PLAN = null, SENDPJ = localStorage.getItem('sendProj') || '';
 /* the project you are working in: everything sent from here uses it (its rules, what is known, private stays local) */
@@ -273,7 +318,7 @@ async function nowStrip() {
     $('now').querySelectorAll('[data-go]').forEach(c => c.onclick = () => document.querySelector(`nav button[data-tab=${c.dataset.go}]`).click());
   } catch { }
 }
-setInterval(() => { if ($('send').style.display !== 'none') nowStrip(); }, 10000); setTimeout(nowStrip, 1200);
+setInterval(() => { if ($('chat').style.display !== 'none') nowStrip(); }, 10000); setTimeout(nowStrip, 1200);
 /* Enter-and-Go: Ctrl+Enter in the box */
 $('thought').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) $('goBtn').click(); });
 $('routeBtn').onclick = async () => {
@@ -649,7 +694,7 @@ window.fill = async (id, slot) => { const v = prompt(`Link, PC file path, or JSO
 const ago = t => { const m = Math.round((Date.now() - t) / 60000); return m < 60 ? m + ' min ago' : m < 2880 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' days ago'; };
 async function projects() {
   const d = await api('/api/projects');
-  const list = (title, arr, help, id) => arr && arr.length ? `<details><summary><b>${title}</b> <span class="dim">(${arr.length})</span></summary>${arr.map(x => { const t = typeof x === 'string' ? x : x.name ? `<b>${esc(x.name)}</b>${x.value ? ' = ' + esc(x.value) : ''} <span class="dim">${esc(x.what || x.note || '')}${x.use_when ? '. Use when: ' + esc(x.use_when) : ''}</span>` : esc(x.text); return `<div class="mode">${typeof x === 'string' ? esc(t) : t}${help ? ` <button class="sm" onclick="help('${id}', this)" data-item="${esc(typeof x === 'string' ? x : x.text || x.name)}">Get help</button>` : ''}</div>`; }).join('')}</details>` : '';
+  const list = (title, arr, help, id) => arr && arr.length ? `<details><summary><b>${title}</b> <span class="dim">(${arr.length})</span></summary>${arr.map(x => { const t = typeof x === 'string' ? x : x.name ? `<b>${esc(x.name)}</b>${x.value ? ' = ' + esc(x.value) : ''} <span class="dim">${esc(x.what || x.note || '')}${x.use_when ? '. Use when: ' + esc(x.use_when) : ''}</span>` : esc(x.text); return `<div class="mode">${typeof x === 'string' ? esc(t) : t}${help ? ` <button class="sm" onclick="help('${id}', this)" data-item="${esc(typeof x === 'string' ? x : x.text || x.name)}">${/^\s*not (verified|tested|checked)/i.test(typeof x === 'string' ? x : x.text || '') ? 'Check it' : 'Fix it'}</button>` : ''}</div>`; }).join('')}</details>` : '';
   const live = d.projects.filter(c => !c.archived), arch = d.projects.filter(c => c.archived);
   $('projList').innerHTML = (arch.length ? `<details class="card"><summary><b>Archived</b> <span class="dim">(${arch.length})</span></summary>${arch.map(c => `<div class="mode"><b>${esc(c.name)}</b> <span class="dim">${esc(c.what)}</span></div>`).join('')}</details>` : '') + live.map(c => {
     const src = Object.values(c.live.sources || {});
@@ -667,8 +712,8 @@ async function projects() {
       <div class="dim" style="margin-top:6px;font-size:13px">Sources: ${src.length ? src.map(x => `${esc(x.label)} ${x.error ? '<span class="st-failed">' + esc(x.error) + '</span>' : 'checked ' + ago(x.checked)}`).join('; ') : (c.sources || []).length ? 'not read yet' : 'none yet'}</div></details>`;
   }).join('');
 }
-/* Get help goes through the planner on Send (with the project picked and its skills searched), so a code change lands on the Coder */
-window.help = async (id, btn) => { SENDPJ = id; localStorage.setItem('sendProj', id); sendProjPills(); document.querySelector('nav button[data-tab=send]').click(); const pj = (PJS_ALL || []).find(c => c.id === id); $('thought').value = `Fix this in the ${pj ? pj.name.split(' (')[0] : id} code: ${btn.dataset.item}`; $('goBtn').click(); };
+/* Check it / Fix it: the item goes to the chat with its project picked; a "not verified" item becomes a check, anything else a fix */
+window.help = async (id, btn) => { SENDPJ = id; localStorage.setItem('sendProj', id); sendProjPills(); document.querySelector('nav button[data-tab=chat]').click(); const pj = (PJS_ALL || []).find(c => c.id === id), name = pj ? pj.name.split(' (')[0] : id, item = btn.dataset.item; $('chatIn').value = /^not (verified|tested|checked)/i.test(item) ? `Check this in the ${name} code and tests, and fix what is wrong: ${item}` : `Fix this in the ${name} code: ${item}`; $('chatGo').click(); };
 $('syncBtn').onclick = async () => { $('syncMsg').textContent = 'reading...'; const r = await api('/api/projects/sync', {}); $('syncMsg').textContent = `${r.report.filter(x => /new/.test(x) && !/ 0 new/.test(x)).length} sources changed, ${r.report.filter(x => /FAILED/.test(x)).length} failed, ${r.pcFiles} PC files asked for`; projects(); };
 
 /* ---- PC: the agent on Andrew's PC, reached over Tailscale or by its polling ---- */
@@ -724,7 +769,7 @@ async function boot() {
   CAT = await api('/api/catalogue');
   pc(true).catch(() => {});
   $('tool').innerHTML = CAT.tools.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
-  const PJS = (await api('/api/projects')).projects.filter(c => !c.archived); PJS_ALL = PJS; sendProjPills(); await tabs(); tabApply(); $('proj').innerHTML = '<option value="">No project</option>' + PJS.map(c => `<option value="${c.id}">${esc(c.name.split(' (')[0])}</option>`).join('');
+  const PJS = (await api('/api/projects')).projects.filter(c => !c.archived); PJS_ALL = PJS; sendProjPills(); chat().catch(() => { }); if ($('rxBubble')) $('rxBubble').style.visibility = 'hidden'; await tabs(); tabApply(); $('proj').innerHTML = '<option value="">No project</option>' + PJS.map(c => `<option value="${c.id}">${esc(c.name.split(' (')[0])}</option>`).join('');
   $('area').innerHTML = Object.entries(CAT.areas).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('');
   $('autonomy').innerHTML = Object.entries(CAT.autonomy).map(([k, v]) => `<option value="${k}"${k === 'draft' ? ' selected' : ''}>${k}</option>`).join('');
   const ad = () => $('autoDoes').textContent = CAT.autonomy[$('autonomy').value]; $('autonomy').onchange = ad; ad();

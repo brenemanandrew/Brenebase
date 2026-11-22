@@ -177,15 +177,15 @@ function makeJob({ text, tool, mode, area, autonomy = 'draft', args = {}, repo, 
   /* pictures on the PC with stable-diffusion.cpp, run by the Brenebase worker itself (no Brenai Studio). The Images tab sends exact settings in args. */
   let sd;
   if (tool === 'image' && ['realistic', 'anime', 'manga'].includes(mode)) {
-    const n = Math.max(1, Math.min(8, +args.count || +((String(text).match(/\b(\d{1,2})\s*(images|pictures|pics|renders|versions)\b/i) || [])[1]) || 1));
+    const n = Math.max(1, Math.min(8, +args.count || +((String(text).match(/\b(\d{1,2}|two|three|four)\s+(?:[a-z-]+\s+){0,2}(images|pictures|pics|renders|versions|photos|shots)\b/i) || [])[1]?.replace(/two/i, '2').replace(/three/i, '3').replace(/four/i, '4')) || 1));
     const ar = (String(text).match(/\b(16:9|9:16|1:1|4:3|3:4|3:2|2:3)\b/) || [])[1] || (/portrait|full body|t-?pose|standing/i.test(text) ? '2:3' : /landscape|wide|scene/i.test(text) ? '3:2' : '1:1');
     const SIZE = { '1:1': [1024, 1024], '2:3': [832, 1216], '3:2': [1216, 832], '9:16': [768, 1344], '16:9': [1344, 768], '3:4': [896, 1152], '4:3': [1152, 896] }[ar];
-    sd = { engine: { realistic: 'zimage', anime: 'illustrious', manga: 'manga' }[mode], prompt: String(args.prompt || text).replace(/^\s*[\w\s]{1,30}:\s*/, '').replace(/\b\d{1,2}\s*(images|pictures|pics|renders|versions)\b/ig, '').trim().slice(0, 2000), count: n, width: +args.width || SIZE[0], height: +args.height || SIZE[1], ...(args.steps ? { steps: +args.steps } : {}), ...(args.cfg !== undefined && args.cfg !== '' ? { cfg: +args.cfg } : {}), ...(args.seed !== undefined && args.seed !== '' ? { seed: +args.seed } : {}), ...(args.negative ? { negative: String(args.negative) } : {}), ...(args.strength ? { strength: +args.strength } : {}) };
+    sd = { engine: { realistic: 'zimage', anime: 'illustrious', manga: 'manga' }[mode], prompt: String(args.prompt || text).replace(/^\s*[\w\s]{1,30}:\s*/, '').replace(/\b(\d{1,2}|two|three|four)\s+((?:[a-z-]+\s+){0,2})(images|pictures|pics|renders|versions|photos|shots)\b/ig, '$2').trim().slice(0, 2000), count: n, width: +args.width || SIZE[0], height: +args.height || SIZE[1], ...(args.steps ? { steps: +args.steps } : {}), ...(args.cfg !== undefined && args.cfg !== '' ? { cfg: +args.cfg } : {}), ...(args.seed !== undefined && args.seed !== '' ? { seed: +args.seed } : {}), ...(args.negative ? { negative: String(args.negative) } : {}), ...(args.strength ? { strength: +args.strength } : {}) };
   }
   let studioBody;
   if (tool === 'image' && ['h3'].includes(mode)) {
     const engine = { realistic: 'zimage', anime: 'illustrious', h3: 'h3' }[mode];
-    const n = Math.max(1, Math.min(8, +((String(text).match(/\b(\d{1,2})\s*(images|pictures|pics|renders|versions)\b/i) || [])[1]) || 1));
+    const n = Math.max(1, Math.min(8, +((String(text).match(/\b(\d{1,2}|two|three|four)\s+(?:[a-z-]+\s+){0,2}(images|pictures|pics|renders|versions|photos|shots)\b/i) || [])[1]?.replace(/two/i, '2').replace(/three/i, '3').replace(/four/i, '4')) || 1));
     const ar = (String(text).match(/\b(16:9|9:16|1:1|4:3|3:4|3:2|2:3|21:9)\b/) || [])[1] || (/portrait|full body|t-?pose|standing/i.test(text) ? '2:3' : /landscape|wide|scene/i.test(text) ? '16:9' : '1:1');
     const F = { engine: 'engine', count: 'count', aspect: 'aspect_ratio', ...(process.env.STUDIO_FIELDS ? JSON.parse(process.env.STUDIO_FIELDS) : {}) };
     studioBody = { [F.engine]: engine, model: engine, prompt: String(text).replace(/^\s*[\w\s]{1,30}:\s*/, '').slice(0, 2000), [F.count]: n, [F.aspect]: ar };
@@ -295,6 +295,20 @@ function savePic(dataUrl) {
   fs.writeFileSync(path.join(IMG_DIR, f), Buffer.from(m[2], 'base64')); return { url: `/api/img/${f}`, file: f, mime: `image/${m[1]}` };
 }
 const picB64 = pic => { try { return pic && fs.readFileSync(path.join(IMG_DIR, path.basename(pic.file))).toString('base64'); } catch { return null; } };
+
+/* a request in parts: one job per part, parts that need another part wait for it (releaseParts) */
+async function makeParts(b, pic) {
+      const parent = L.add({ ...(b.chat ? { chat: true, summary: b.summary || '', plannedBy: b.by || '', question: b.question || '', pic } : {}), tool: 'parts', mode: 'parts', backend: 'parts', runsOn: 'cloud', label: `Parts: ${String(b.text || '').slice(0, 50)}`, text: b.text, project: b.project || null, status: 'running', children: [] });
+      const kids = [];
+      const byIdx = {}, pending = [];
+      for (const [idx, pt] of (b.parts || []).entries()) {
+        const needs = (pt.needs || []).filter(n => Number.isInteger(n) && n < idx);
+        if (needs.length) { pending.push({ idx, pt, needs }); continue; }
+        let j = makeJob({ text: pt.text, tool: pt.tool, mode: pt.mode, area: b.area, autonomy: b.autonomy, project: pt.private ? 'work' : b.project, repo: b.repo, thread: b.thread, pic }); L.update(j.id, { parent: parent.id, ...(pt.skills && pt.skills.length ? { plannedSkills: pt.skills } : {}) }); byIdx[idx] = j.id; kids.push(j.id); if (j.status === 'ready') start(j).catch(() => { });
+      }
+      const par = L.update(parent.id, { children: kids, byIdx, pending, area: b.area, autonomy: b.autonomy, repo: b.repo, thread: b.thread, status: 'done' }, `${kids.length} part(s) sent to their tools${pending.length ? `, ${pending.length} waiting for an earlier part` : ''}`);
+      return par;
+}
 
 /* the doll skill (skills/doll.md): the PC model turns words into a doll's look; checked here, never saved until he taps Save. No cloud model. */
 const SKILLS = path.join(path.dirname(new URL(import.meta.url).pathname), 'skills');
@@ -555,17 +569,20 @@ http.createServer(async (req, res) => {
     }
     if (p === '/api/jobs/parts' && req.method === 'POST') {
       /* one job per part; every part goes through makeJob's checks on its own */
-      const b = await body(req, 9e6); const pic = b.image ? savePic(b.image) : null; delete b.image; const parent = L.add({ tool: 'parts', mode: 'parts', backend: 'parts', runsOn: 'cloud', label: `Parts: ${String(b.text || '').slice(0, 50)}`, text: b.text, project: b.project || null, status: 'running', children: [] });
-      const kids = [];
-      const byIdx = {}, pending = [];
-      for (const [idx, pt] of (b.parts || []).entries()) {
-        const needs = (pt.needs || []).filter(n => Number.isInteger(n) && n < idx);
-        if (needs.length) { pending.push({ idx, pt, needs }); continue; }
-        let j = makeJob({ text: pt.text, tool: pt.tool, mode: pt.mode, area: b.area, autonomy: b.autonomy, project: pt.private ? 'work' : b.project, repo: b.repo, thread: b.thread, pic }); L.update(j.id, { parent: parent.id, ...(pt.skills && pt.skills.length ? { plannedSkills: pt.skills } : {}) }); byIdx[idx] = j.id; kids.push(j.id); if (j.status === 'ready') start(j).catch(() => { });
-      }
-      const par = L.update(parent.id, { children: kids, byIdx, pending, area: b.area, autonomy: b.autonomy, repo: b.repo, thread: b.thread, status: 'done' }, `${kids.length} part(s) sent to their tools${pending.length ? `, ${pending.length} waiting for an earlier part` : ''}`);
+      const b = await body(req, 9e6); const pic = b.image ? savePic(b.image) : null; delete b.image;
+      return send(res, 200, dress(await makeParts(b, pic)));
+    }
+    /* the chat: one message in, Brenebase works out the parts (planner + skills) and runs them; spending or shipping waits for an OK */
+    if (p === '/api/chat' && req.method === 'POST') {
+      const b = await body(req, 9e6); const text = String(b.text || '').trim(); if (!text && !b.image) return send(res, 400, { error: 'say something' });
+      const pic = b.image ? savePic(b.image) : null;
+      const tg = TG.read(text); const th = b.thread && TH.get(b.thread);
+      const pj = (b.project && PJ.card(b.project)) || (tg.project && PJ.card(tg.project)) || (th && th.project && PJ.card(th.project)) || PJ.match(text);
+      const plan = await think((tg.rest || text) + (pic ? '\n\n[Andrew attached a picture to this request. Parts that should look at it get it.]' : ''), { claude, askPc, project: pj, tags: tg });
+      const par = await makeParts({ text: text || '(a picture)', parts: plan.parts, project: pj ? pj.id : undefined, autonomy: 'draft', thread: b.thread, repo: tg.repo, chat: true, summary: plan.summary, by: plan.by, question: plan.question }, pic);
       return send(res, 200, dress(par));
     }
+    if (p === '/api/chat' && req.method === 'GET') { const tf = u.searchParams.get('thread') || ''; return send(res, 200, { turns: L.list(200).filter(j => j.chat && (j.thread || '') === tf).slice(0, 40).reverse().map(dress) }); }
     if (p === '/api/tags' && req.method === 'GET') return send(res, 200, { tags: TG.tags() });
     if (p === '/api/tags' && req.method === 'POST') { const b = await body(req); return send(res, 200, { tags: TG.saveTags(b.tags) }); }
     if (p === '/api/pc' && req.method === 'GET') return send(res, 200, { ...(await PA.state()), worker: { online: workerOnline(), can: worker.can, busy: worker.busy || [] }, actions: PA.ACTIONS });
