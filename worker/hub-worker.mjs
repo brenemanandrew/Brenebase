@@ -130,10 +130,11 @@ async function doJob(j) {
     return { ok: true, result: { files } };
   }
   if (j.backend === 'read') {
-    const f = path.resolve(j.source.path);
-    if (!READ_ROOTS.some(r => f.toLowerCase().startsWith(r.toLowerCase() + path.sep) || f.toLowerCase() === r.toLowerCase())) return { ok: false, error: `${f} is outside READ_ROOTS` };
-    if (!fs.existsSync(f)) return { ok: false, error: `Not found on this PC: ${f}` };
-    return { ok: true, text: fs.readFileSync(f, 'utf8').slice(0, 400000) };
+    let f = path.resolve(j.readPath || j.source.path);
+    if (!READ_ROOTS.some(r => f.toLowerCase().startsWith(r.toLowerCase() + path.sep) || f.toLowerCase() === r.toLowerCase()) && !/\\interface\\addons\\/i.test(f)) return { ok: false, error: `${f} is outside READ_ROOTS` };
+    /* not where the card says: look for the same file name in the allowed folders and report where it really is */
+    if (!fs.existsSync(f)) { const found = findFile(path.basename(f), [path.dirname(f), ...READ_ROOTS, ...wowRoots(f)]); if (!found) return { ok: false, error: `Not found on this PC: ${path.basename(f)} (looked under ${READ_ROOTS.join(', ')})` }; f = found; }
+    return { ok: true, text: fs.readFileSync(f, 'utf8').slice(0, 400000), result: { foundAt: f } };
   }
   return { ok: false, error: `This PC cannot do ${j.backend}` };
 }
@@ -167,6 +168,26 @@ async function merge(j) {
   const rejected = report.filter(l => /REJECTED|EMPTY|failed/.test(l)).length;
   const look = (j.manifest && j.manifest.look_at) || [];
   return { ok: !rejected && !/FAILED/.test(tested), text: [...report, '', tested, look.length ? `\nLook at:\n- ${look.join('\n- ')}` : '', runCfg.start ? `\nRun it: ${runCfg.start}` : ''].join('\n'), result: { branch: j.branch } };
+}
+
+/* look for a file by name, a few folders deep, without walking forever */
+function findFile(name, roots, depth = 6) {
+  const want = name.toLowerCase(); let seen = 0;
+  const walk = (d, n) => {
+    if (n < 0 || seen > 60000) return null; let ents; try { ents = fs.readdirSync(d, { withFileTypes: true }); } catch { return null; }
+    seen += ents.length;
+    for (const e of ents) if (e.isFile() && e.name.toLowerCase() === want) return path.join(d, e.name);
+    for (const e of ents) if (e.isDirectory() && !/^(node_modules|\.git|\$recycle\.bin|cache|logs|wtf|screenshots)$/i.test(e.name)) { const r = walk(path.join(d, e.name), n - 1); if (r) return r; }
+    return null;
+  };
+  for (const r of [...new Set(roots)]) if (fs.existsSync(r)) { const hit = walk(r, depth); if (hit) return hit; }
+  return null;
+}
+/* an addon file: also try the usual World of Warcraft installs and game versions */
+function wowRoots(f) {
+  if (!/addons/i.test(f)) return [];
+  const bases = ['C:\\Program Files (x86)\\World of Warcraft', 'C:\\Program Files\\World of Warcraft', 'D:\\World of Warcraft', 'D:\\Games\\World of Warcraft', 'E:\\World of Warcraft', 'F:\\World of Warcraft', 'C:\\Games\\World of Warcraft'];
+  return bases.flatMap(b => ['_retail_', '_classic_', '_classic_era_', '_ptr_'].map(v => path.join(b, v, 'Interface', 'AddOns')));
 }
 
 const H = { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' };

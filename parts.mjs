@@ -75,7 +75,10 @@ function neutralize(text, names) {
 export function plan(text) {
   const cs = clauses(text).map(c => ({ ...c, side: side(c) }));
   const names = new Map();
-  const mechanics = cs.filter(c => c.side === 'code').map(c => neutralize(c.text.replace(/^(make|build|create)( me)? (a|an) (game|app)( where| in which| that)?\s*/i, ''), names)).filter(Boolean);
+  /* instructions to Brenebase about the routing ("without giving Claude anything...", "don't tell Claude") are not part of the task */
+  const META = /\b(claude|copilot|the (ai|llm|model))\b.*\b(might|would|will|could|may)\b.*\b(find|refuse|mind|object|flag|object to|not like)\b|\b(without|don'?t|do not|never)\b.*\b(giving|give|sending|send|telling|tell|showing|show)\b.*\b(claude|copilot|the ai)\b|^(independently|separately|on its own)$/i;
+  for (const c of cs) if (c.side === 'code') c.text = c.text.split(/\s+(?=without\b|so that\b)/i).filter(x => !META.test(x)).join(' ').trim();
+  const mechanics = cs.filter(c => c.side === 'code' && c.text && !META.test(c.text)).map(c => neutralize(c.text.replace(/^(make|build|create)( me)? (a|an) (game|app)( where| in which| that)?\s*/i, ''), names)).filter(Boolean);
   const art = cs.filter(c => c.side === 'art').map(c => c.text);
   const story = cs.filter(c => c.side === 'story').map(c => c.text);
 

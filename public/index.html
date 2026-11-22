@@ -162,6 +162,7 @@ function jobCard(j) {
   return `<div class="card"><div class="row" style="margin:0"><b>${esc(j.label)}</b>${j.area ? `<span class="tag">${esc(j.area)}</span>` : ''}<span class="tag">${esc(j.runsOn)}</span><span class="st-${j.status}">${j.status}</span></div>
   <div class="dim">${esc((j.text || '').slice(0, 160))}</div>
   ${j.error ? `<p class="st-failed">${esc(j.error)}</p>` : ''}
+  ${j.stuck ? `<p class="st-waiting">${esc(j.stuck)}</p>` : ''}
   ${r.link ? `<p><a href="${esc(r.link)}" target="_blank" style="color:var(--acc)">Open</a></p>` : ''}
   ${r.restyle && r.images ? r.images.map(u => `<img src="${esc(u)}" style="max-width:48%;border-radius:8px;margin:4px 1%">`).join('') + `<div class="row"><button class="sm" onclick="restyle('${j.id}', 'Realistic, detailed, natural lighting')">Restyle realistic (Meshy)</button><button class="sm" onclick="restyle('${j.id}', 'Cel-shaded anime style, clean ink outlines')">Restyle anime (Meshy)</button></div>` : r.images && r.images.length ? r.images.map(u => `<a href="${esc(u)}" target="_blank"><img src="${esc(u)}" style="max-width:100%;border-radius:8px;margin:4px 0"></a>`).join('') + '<div class="dim">Meshy links expire after a few days: save the ones you want.</div>' : r.thumb ? `<img src="${esc(r.thumb)}" style="max-width:100%;border-radius:8px">` : ''}
   ${r.branch ? `<p class="dim">Branch: ${esc(r.branch)}</p>` : ''}

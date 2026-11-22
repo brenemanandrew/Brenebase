@@ -105,6 +105,11 @@ export async function sync(onlyId) {
   }
   return { report, pcJobs };
 }
+/* the worker found a file somewhere other than the card's path: use the real place from now on */
+const MOVED = path.join(process.env.DATA_DIR || './data', 'moved-paths.json');
+let moved = {}; try { moved = JSON.parse(fs.readFileSync(MOVED, 'utf8')); } catch { /* none yet */ }
+export function remember(projectId, from, to) { moved[from] = to; fs.mkdirSync(path.dirname(MOVED), { recursive: true }); fs.writeFileSync(MOVED, JSON.stringify(moved, null, 1)); }
+export const realPath = p => moved[p] || p;
 export function recordPc(projectId, s, ok, text, error) { return ok ? record(projectId, s, text) : (recordError(projectId, s, error), []); }
 
 /* ---- using what is known ---- */
