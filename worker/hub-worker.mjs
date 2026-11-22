@@ -83,7 +83,11 @@ setInterval(async () => {
 }, 60000);
 
 const run = (cmd, args, cwd, input, onOut) => new Promise(ok => {
-  const p = spawn(cmd, args, { cwd, shell: process.platform === 'win32' || !args.length });
+  /* Windows: an .exe given by full path runs without a shell, so a space in "C:\Program Files" cannot split it; through a shell, anything with a space is quoted */
+  const direct = process.platform === 'win32' && path.isAbsolute(cmd) && /\.exe$/i.test(cmd) && args.length;
+  const shell = !direct && (process.platform === 'win32' || !args.length);
+  const q = a => shell && process.platform === 'win32' && /\s/.test(a) && !/^".*"$/.test(a) ? `"${a}"` : a;
+  const p = spawn(q(cmd), args.map(q), { cwd, shell, windowsHide: true });
   let out = '', err = ''; p.stdout.on('data', d => { out += d; if (onOut) onOut(String(d)); }); p.stderr.on('data', d => { err += d; if (onOut) onOut(String(d)); });
   p.on('error', e => ok({ code: -1, out, err: String(e.message) }));
   if (input) { p.stdin.write(input); p.stdin.end(); }
@@ -109,11 +113,26 @@ async function doJob(j) { await progress(j, 'started on the PC', '', true);
     }
     while (turns.length && turns[0].role !== 'user') turns.shift();
     if (!turns.length || turns[turns.length - 1].role !== 'user') turns.push({ role: 'user', content: j.text || '...' });
-    const ask = async msgs => { const r = await fetch(`${BIONIC}/v1/chat/completions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ messages: msgs, temperature: 0.8, max_tokens: j.maxTokens || 800 }), signal: AbortSignal.timeout(300000) }); let d; try { d = await r.json(); } catch { d = {}; } return { r, d }; };
+    /* a picture: a vision model on this PC (LM Studio lists them as type "vlm") describes it, then the chat model answers */
+    let seen = null, visionNote = null, mainModel;
+    try { const ms = (await (await fetch(`${BIONIC}/api/v0/models`, { signal: AbortSignal.timeout(5000) })).json()).data || []; mainModel = (ms.find(m => m.state === 'loaded' && m.type === 'llm') || {}).id;
+      if (j.image64) {
+        const vlm = process.env.VISION_MODEL || (ms.find(m => m.type === 'vlm' && m.state === 'loaded') || ms.find(m => m.type === 'vlm') || {}).id;
+        if (!vlm) visionNote = 'No picture-reading model on your PC. Download one in LM Studio (for example Qwen2.5-VL 7B or Gemma 3 12B), or set the picture reader to Claude in her settings.';
+        else {
+          await progress(j, `reading the picture with ${vlm}`, '', true);
+          const rv = await fetch(`${BIONIC}/v1/chat/completions`, { method: 'POST', headers: { 'content-type': 'application/json' }, signal: AbortSignal.timeout(300000), body: JSON.stringify({ model: vlm, max_tokens: 500, temperature: 0.3, messages: [{ role: 'user', content: [{ type: 'text', text: 'Describe this picture for a friend who cannot see it: what is in it, any people and what they are doing, any text word for word, the setting and the mood. 3 to 6 plain sentences.' }, { type: 'image_url', image_url: { url: `data:${j.imageMime || 'image/jpeg'};base64,${j.image64}` } }] }] }) });
+          const dv = await rv.json().catch(() => ({})); seen = rv.ok ? dv.choices?.[0]?.message?.content || null : null;
+          if (!seen) visionNote = `The picture model (${vlm}) could not read it: ${JSON.stringify(dv).slice(0, 160)}`;
+        }
+        const lastU = turns[turns.length - 1]; lastU.content = lastU.content.replace(/\n\n\[Andrew sent a picture\.\]$/, '') + (seen ? `\n\n[Andrew sent a picture. What it shows: ${seen}]` : '\n\n[Andrew sent a picture, but you cannot see it. Say so briefly.]');
+      }
+    } catch { if (j.image64 && !visionNote) visionNote = 'Could not ask LM Studio about picture models.'; }
+    const ask = async msgs => { const r = await fetch(`${BIONIC}/v1/chat/completions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...(mainModel && j.image64 ? { model: mainModel } : {}), messages: msgs, temperature: 0.8, max_tokens: j.maxTokens || 800 }), signal: AbortSignal.timeout(300000) }); let d; try { d = await r.json(); } catch { d = {}; } return { r, d }; };
     let { r, d } = await ask(j.system ? [{ role: 'system', content: j.system }, ...turns] : turns);
     /* a template that takes no system role: put the instructions in front of the first message instead */
     if (!r.ok && j.system && /template|parser|role/i.test(JSON.stringify(d))) ({ r, d } = await ask([{ role: 'user', content: j.system + '\n\n' + turns[0].content }, ...turns.slice(1)]));
-    return { ok: r.ok, text: d.choices?.[0]?.message?.content || '', error: r.ok ? undefined : JSON.stringify(d).slice(0, 300) };
+    return { ok: r.ok, text: d.choices?.[0]?.message?.content || '', error: r.ok ? undefined : JSON.stringify(d).slice(0, 300), result: { seen, visionNote } };
   }
   if (j.backend === 'claude-code') {
     const repo = path.join(REPOS, (j.repo || 'brenemanandrew/Brenelandtest').split('/').pop());
