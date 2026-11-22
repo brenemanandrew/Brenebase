@@ -23,8 +23,20 @@ export function convo({ id, name, close }) {
   save(); return state();
 }
 /* a doll's look and reactions, checked: only known fields, known words, numbers 0..1 (the doll skill, skills/doll.md, uses the same rules) */
+/* everyday words a model (or Andrew) uses, mapped to the doll's own words and colours */
+const SYN = {
+  hairStyle: [['twin tail', 'twintails'], ['twintail', 'twintails'], ['pigtail', 'twintails'], ['pony', 'ponytail'], ['braid', 'ponytail'], ['bun', 'bun'], ['topknot', 'bun'], ['updo', 'bun'], ['pixie', 'pixie'], ['buzz', 'pixie'], ['bob', 'bob'], ['short', 'bob'], ['wav', 'wavy'], ['curl', 'wavy'], ['long', 'long'], ['straight', 'long']],
+  topStyle: [['crop', 'crop'], ['dress', 'dress'], ['gown', 'dress'], ['hood', 'hoodie'], ['jacket', 'hoodie'], ['sweatshirt', 'hoodie'], ['sweater', 'sweater'], ['jumper', 'sweater'], ['cardigan', 'sweater'], ['pullover', 'sweater'], ['turtleneck', 'sweater'], ['blouse', 'blouse'], ['button', 'blouse'], ['tank', 'tank'], ['cami', 'tank'], ['vest', 'tank'], ['tee', 'tee'], ['t-shirt', 'tee'], ['tshirt', 'tee'], ['shirt', 'tee'], ['top', 'tee']],
+  bottomStyle: [['legging', 'leggings'], ['yoga', 'leggings'], ['tights', 'leggings'], ['skirt', 'skirt'], ['short', 'shorts'], ['jean', 'jeans'], ['pant', 'jeans'], ['trouser', 'jeans'], ['denim', 'jeans']],
+  shoeStyle: [['boot', 'boots'], ['sneaker', 'sneakers'], ['trainer', 'sneakers'], ['runner', 'sneakers'], ['heel', 'flats'], ['flat', 'flats'], ['sandal', 'flats'], ['slipper', 'flats'], ['loafer', 'flats'], ['shoe', 'sneakers']],
+};
+const COLOURS = { red: '#c0392b', crimson: '#a5142a', maroon: '#6d1a2a', burgundy: '#6d1a2a', pink: '#f08bb0', 'hot pink': '#e8417e', orange: '#e67e22', yellow: '#f2c94c', gold: '#d4a017', green: '#3f9a4b', 'dark green': '#1f5a2c', olive: '#6b7a2e', teal: '#178f8a', blue: '#3a7bd5', 'light blue': '#8ec5f0', navy: '#1d2b53', purple: '#7d4bb3', violet: '#8a5bd0', lavender: '#b9a2e0', black: '#151418', white: '#f4f1ee', grey: '#8a8a92', gray: '#8a8a92', silver: '#c0c4cc', brown: '#6b4428', tan: '#c8a27a', beige: '#e3d2b4', cream: '#f3e9d2', blonde: '#e8cf7a', blond: '#e8cf7a', platinum: '#ece6d6', auburn: '#8d3a1c', ginger: '#c4581e', redhead: '#b3352b', brunette: '#4a2c1c', pale: '#f6e9e4', fair: '#f4e0d6', olive_skin: '#c99e74', dark: '#5a3b2a' };
+const asHex = v => { if (/^#[0-9a-f]{6}$/i.test(v || '')) return v; if (/^#[0-9a-f]{3}$/i.test(v || '')) return '#' + v.slice(1).split('').map(c => c + c).join(''); const t = String(v || '').toLowerCase().trim(); return COLOURS[t] || COLOURS[t.replace(/^(dark|light|bright|pale|deep)\s+/, '')] || undefined; };
 export function cleanLook(src) {
-  const s = { look: src || {} };
+  const s = { look: { ...(src || {}) } };
+  for (const [k, list] of Object.entries(SYN)) { const v = String(s.look[k] || '').toLowerCase(); if (v && !(LOOKS[k] || []).includes(v)) { const hit = list.find(([w]) => v.includes(w)); if (hit) s.look[k] = hit[1]; } }
+  for (const k of ['skin', 'hair', 'iris', 'top', 'shirt', 'bottom', 'shoes', 'bg1', 'bg2', 'lip']) if (s.look[k]) s.look[k] = asHex(s.look[k]) || s.look[k];
+  if (typeof s.look.glasses === 'string') s.look.glasses = !/^(no|none|false|off)$/i.test(s.look.glasses);
   const hex = v => /^#[0-9a-f]{6}$/i.test(v || '') ? v : undefined;
   const look = {}; for (const k of ['skin', 'hair', 'iris', 'top', 'shirt', 'bottom', 'shoes', 'bg1', 'bg2', 'lip']) { const v = hex(s.look && s.look[k]); if (v) look[k] = v; }
   const pick = (k, list) => { const v = s.look && s.look[k]; if (list.includes(v)) look[k] = v; };

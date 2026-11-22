@@ -108,6 +108,17 @@ async function act(action) {
     const c = await run(LMS, ['server', 'start', '--port', '1234']);
     return { ok: b.code === 0 && c.code === 0, note: [a.out, b.out, c.out].join('\n').trim().slice(-1500), status: await status() };
   }
+  /* a picture-reading (vision) model for LM Studio, so pictures sent to the companion can be read on this PC. Downloads in the background. */
+  if (verb === 'vision-get') {
+    if (!fs.existsSync(LMS)) return { ok: false, note: `lms not found at ${LMS}` };
+    if (running.vision && running.vision.exitCode === null && !running.vision.ended) return { ok: true, note: 'Already downloading. Tap Vision log to see how far.' };
+    const want = process.env.VISION_GET || 'qwen2.5-vl-7b';
+    const p = spawn(LMS, ['get', want, '-y'], { windowsHide: true }); p.log = [];
+    const keep = d => { p.log.push(...String(d).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').split(/[\r\n]+/).filter(x => x.trim())); p.log = p.log.slice(-40); };
+    p.stdout.on('data', keep); p.stderr.on('data', keep); p.on('exit', c => { p.ended = true; keep(`(finished, code ${c})`); }); p.on('error', e => { p.ended = true; keep(String(e.message)); });
+    running.vision = p; return { ok: true, note: `Downloading ${want} with LM Studio (several GB). Tap Vision log to see how far. When it finishes, pictures are read on this PC.` };
+  }
+  if (verb === 'logs' && name === 'vision') return { ok: true, note: (running.vision && running.vision.log || []).join('\n') || 'nothing yet' };
   if (verb === 'model-stop') { await run(LMS, ['unload', '--all']); const r = await run(LMS, ['server', 'stop']); return { ok: true, note: r.out.trim(), status: await status() }; }
   if (verb === 'start') { const note = startHelper(name); return { ok: /started|already running/.test(note), note, status: await status() }; }
   if (verb === 'stop') return { ok: true, note: stopHelper(name), status: await status() };

@@ -282,7 +282,8 @@ async function dollAsk(text, current = {}) {
   if (out == null) return { error: 'Your PC model is not free right now. The doll skill runs only on your PC: check the Worker and Model lights.' };
   const m = String(out).match(/\{[\s\S]*\}/); let j = null; try { j = m && JSON.parse(m[0]); } catch { }
   if (!j) return { error: 'The PC model did not answer with a doll. Try saying it another way.', raw: String(out).slice(0, 400) };
-  return { name: j.name ? String(j.name).slice(0, 40) : undefined, look: { ...(current.look || {}), ...CP.cleanLook(j.look) }, reactions: { ...(current.reactions || {}), ...CP.cleanReactions(j.reactions) }, note: String(j.note || '').slice(0, 300) };
+  const lk = j.look || Object.fromEntries(Object.entries(j).filter(([k]) => !['name', 'note', 'reactions'].includes(k)));
+  return { name: j.name ? String(j.name).slice(0, 40) : undefined, look: { ...(current.look || {}), ...CP.cleanLook(lk) }, reactions: { ...(current.reactions || {}), ...CP.cleanReactions(j.reactions) }, note: String(j.note || '').slice(0, 300) };
 }
 
 /* a picture read by Claude (only when he chose Claude as the picture reader for the companion) */
@@ -424,6 +425,7 @@ http.createServer(async (req, res) => {
     if (p === '/api/skills' && req.method === 'GET') { const a = SK.all(); return send(res, 200, { skills: a.skills.map(x => ({ name: x.name, description: x.description, from: x.from, src: x.src })), errors: a.errors, pc: SK.pcState() }); }
     if (p === '/api/skills/check' && req.method === 'POST') { const b = await body(req); const c = await SK.check(String(b.task || ''), { claude: b.rulesOnly ? null : claude }); return send(res, 200, { ...c, log: SK.logLines(c) }); }
     if (p === '/api/skills/sync' && req.method === 'POST') { const j = L.add({ tool: 'skills', mode: 'read', backend: 'skills-list', runsOn: 'pc', label: 'Read the skill folders on the PC', text: 'Read every SKILL.md in the PC skill folders.', status: 'queued' }); return send(res, 200, j); }
+    if (p === '/api/studio/vision' && req.method === 'POST') { const calls = [{ path: '/api/llm/status', max: 4000 }, ...['image_url', 'vision', 'mmproj', 'caption', 'llm/chat', 'describe', 'paste', 'readAsDataURL'].map(g => ({ path: '/', grep: g, before: 700, after: 500 })), { path: '/api/config', max: 6000 }]; const j = L.add({ tool: 'image', mode: 'studio', backend: 'studio', runsOn: 'pc', label: 'How Brenai Studio reads pictures', text: 'Read how Brenai Studio reads a picture (its model and the request it sends), so Brenebase can use the same. Changes nothing. Keep Brenai Studio open.', calls, status: 'queued' }); return send(res, 200, j); }
     if (p === '/api/engines/help' && req.method === 'POST') { const j = L.add({ tool: 'image', mode: 'studio', backend: 'engine-help', runsOn: 'pc', label: "Read the picture and movie engine's options", text: 'Run sd-cli --help and read the notes next to it, so the movie model can be wired up exactly. Changes nothing.', status: 'queued' }); return send(res, 200, j); }
     if (p === '/api/engines/find' && req.method === 'POST') { const j = L.add({ tool: 'image', mode: 'studio', backend: 'engines', runsOn: 'pc', label: 'Find the image and movie engines on the PC', text: 'Find how Brenai Studio runs its image and movie models (program, model files, command lines), so Brenebase can run them itself. Reads only.', status: 'queued' }); return send(res, 200, j); }
     if (p === '/api/studio/look' && req.method === 'POST') {
@@ -475,6 +477,14 @@ http.createServer(async (req, res) => {
       CP.add('me', text, { mode, convo, ...(pic ? { image: picUrl, pic } : {}) });
       const reader = (CP.state().setup || {}).imageReader || 'pc';
       if (im && reader === 'claude' && claude) { try { CP.seen(pic, await describeImage(im[1], im[2])); } catch (e) { CP.add('note', `Claude could not read the picture: ${String(e.message || e).slice(0, 160)}`, { convo }); } }
+      /* asking her to change ("put on a red dress", "try a ponytail"): the doll skill works out the new look on the PC model and it is kept */
+      if (text && /\b(wear|wearing|put on|take off|change (into|your|her|clothes|outfit)|dress (up|in|yourself)|outfit|hair ?(style|cut|colou?r)?|dye|switch (to|into)|try on|glasses|ponytail|pigtails|braid|skirt|jeans|shorts|leggings|hoodie|sweater|boots|sneakers|heels)\b/i.test(text)) {
+        const cur = CP.state().setup || {};
+        dollAsk(`Andrew said to his companion: "${text}". If he is asking her to change how she looks (clothes, hair, colours, glasses), give the change. If not, answer {"look":{},"note":""}.`, cur).then(d => {
+          if (d.error || !d.look) return; const now = CP.state().setup || {}; if (JSON.stringify(d.look) === JSON.stringify(now.look || {})) return;
+          CP.setup({ ...now, look: d.look }); CP.add('note', `Her look changed${d.note ? ': ' + d.note : ''}`, { convo });
+        }).catch(() => { });
+      }
       const rq = CP.request(mode);
       const needPc = im && !(CP.state(400).history.find(m => m.pic === pic) || {}).seen;
       const j = L.add({ tool: 'companion', mode, backend: 'pc-model', runsOn: 'pc', label: `Companion: ${mode}`, text: text || '(a picture)', system: rq.system, messages: rq.messages, maxTokens: 600, companion: true, convo, status: 'queued', quiet: true, ...(needPc ? { image64: im[2], imageMime: `image/${im[1]}`, pic } : {}) });

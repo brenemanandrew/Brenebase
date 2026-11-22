@@ -353,7 +353,10 @@ const CP_MOVES = ['', 'wave', 'fingerwave', 'cheer', 'stretch', 'crossarms', 'hi
 const CP_MODES = [['chat', 'Just talk'], ['vent', 'Vent'], ['roleplay', 'Roleplay'], ['coach', 'Coach']];
 const CP_VOICES = ['af_heart', 'af_bella', 'af_nicole', 'af_sarah', 'af_sky', 'af_nova', 'af_river', 'af_jessica', 'af_kore', 'af_aoede', 'am_michael', 'am_fenrir', 'am_puck', 'am_echo', 'am_eric', 'am_liam', 'am_onyx', 'am_adam', 'bf_emma', 'bf_isabella', 'bf_lily', 'bm_george', 'bm_fable', 'bm_lewis', 'bm_daniel'];
 let cpPending = null; let CP = null, cpAv = null, cpMode = localStorage.getItem('cpMode') || 'chat', cpSeen = 0, cpTimer = 0, cpDraft = null, cpPic = null;
-function cpLoadAvatar(look, el, view) { return new Promise(ok => { window.COMPANION_LOOK = look || {}; const go = () => { window.COMPANION_REACT = $('cpSetup').style.display !== 'none' && cpDraft ? cpDraft.reactions : (CP && CP.setup && CP.setup.reactions) || {}; const av = window.CompanionAvatar.mount(el, { onPortraitTap: () => cpFullOpen(), wardrobe: true, onWardrobe: () => cpTray(), onTouch: (zone, mine) => { if (mine && mine.send && CP && CP.setup && $('cpChat').style.display !== 'none') api('/api/companion/say', { text: mine.send, mode: cpMode }).then(() => cpPoll()); } }); if (view) av.view(view); ok(av); }; if (window.CompanionAvatar) return go(); const sc = document.createElement('script'); sc.src = '/companion-avatar.js?v=2'; sc.onload = go; document.head.appendChild(sc); }); }
+function cpLoadAvatar(look, el, view) { return new Promise(ok => { window.COMPANION_LOOK = look || {};
+  /* a fresh element each time: the old drawing's animation loop and touch handlers end with the old element (they piled up and slowed every redraw) */
+  if (el.isConnected) { const fresh = el.cloneNode(false); el.replaceWith(fresh); el = fresh; }
+  const go = () => { window.COMPANION_REACT = $('cpSetup').style.display !== 'none' && cpDraft ? cpDraft.reactions : (CP && CP.setup && CP.setup.reactions) || {}; const av = window.CompanionAvatar.mount(el, { onPortraitTap: () => cpFullOpen(), wardrobe: true, onWardrobe: () => cpTray(), onTouch: (zone, mine) => { if (mine && mine.send && CP && CP.setup && $('cpChat').style.display !== 'none') api('/api/companion/say', { text: mine.send, mode: cpMode }).then(() => cpPoll()); } }); if (view) av.view(view); ok(av); }; if (window.CompanionAvatar) return go(); const sc = document.createElement('script'); sc.src = '/companion-avatar.js?v=2'; sc.onload = go; document.head.appendChild(sc); }); }
 /* the look editor: every change redraws the preview; Save keeps it */
 async function cpSetupView(editing) {
   cpFullClose(); window.COMPANION_WORN = {}; $('cpChat').style.display = 'none'; $('cpSetup').style.display = ''; $('cpCancel').style.display = editing ? '' : 'none'; $('cpStage').textContent = ''; cpAv = null;
@@ -386,7 +389,7 @@ async function cpSetupView(editing) {
     <h4>Voice</h4><div class="row" style="margin:4px 0"><select id="cpVoice">${CP_VOICES.map(v => `<option${cpDraft.voice === v ? ' selected' : ''}>${v}</option>`).join('')}</select><label class="dim"><input type="checkbox" id="cpSpeak"${cpDraft.speak ? ' checked' : ''}> read replies aloud</label></div>
     <h4>Pictures you send her</h4><select id="cpReader"><option value="pc"${cpDraft.imageReader === 'pc' ? ' selected' : ''}>Read on your PC (needs a vision model in LM Studio)</option><option value="claude"${cpDraft.imageReader === 'claude' ? ' selected' : ''}>Read by Claude (the picture goes to Claude)</option></select>
   </div>`;
-  const E = $('cpEditor'), redraw = () => { $('cpPreview').textContent = ''; cpLoadAvatar(cpDraft.look, $('cpPreview'), 'full'); };
+  const E = $('cpEditor'), redraw = () => { if (redraw.q) return; redraw.q = requestAnimationFrame(() => { redraw.q = 0; cpLoadAvatar(cpDraft.look, $('cpPreview'), 'full'); }); };
   E.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { L[b.dataset.k] = b.dataset.v; E.querySelectorAll(`[data-k="${b.dataset.k}"]`).forEach(x => x.classList.toggle('on', x === b)); redraw(); });
   E.querySelectorAll('[data-c]').forEach(i => i.oninput = () => { L[i.dataset.c] = i.value; redraw(); });
   E.querySelectorAll('[data-s]').forEach(i => i.oninput = () => { L[i.dataset.s] = +i.value; redraw(); });
@@ -432,7 +435,7 @@ function cpTray() {
 }
 function cpFullSay() { const h = (CP && CP.history) || []; const last = [...h].reverse().find(m => m.who === 'them'); $('cpFullSay').textContent = CP && CP.waiting ? `${CP.setup.name} is thinking...` : last ? last.text : ''; }
 $('cpFullBtn').onclick = cpFullOpen; $('cpFullX').onclick = cpFullClose; $('cpFullEdit').onclick = () => cpSetupView(true);
-$('cpFullSend').onclick = async () => { const t = $('cpFullIn').value.trim(); if (!t) return; $('cpFullIn').value = ''; if (cpAv) cpAv.feel(t); await api('/api/companion/say', { text: t, mode: cpMode }); cpPoll(); };
+$('cpFullSend').onclick = async () => { const t = $('cpFullIn').value.trim(); if (!t) return; $('cpFullIn').value = ''; if (cpAv) cpAv.feel(t); await api('/api/companion/say', { text: t, mode: cpMode }); cpPoll.extra = 0; cpPoll(); };
 $('cpFullIn').onkeydown = e => { if (e.key === 'Enter') $('cpFullSend').onclick(); };
 function cpRender() {
   const h = CP.history || [];
@@ -458,7 +461,13 @@ $('cpVoiceT').onclick = async () => { const S = CP.setup; await api('/api/compan
 $('cpClear').onclick = async () => { if (!confirm('Clear this conversation? Its messages are deleted.')) return; await api('/api/companion/clear', {}); companion(); };
 /* a picture for her: shrunk on the phone first (long side 1280), sent with whatever you type */
 $('cpPicBtn').onclick = () => $('cpFile').click();
-$('cpFile').onchange = () => { const f = $('cpFile').files[0]; if (!f) return; const img = new Image(); img.onload = () => { const k = Math.min(1, 1280 / Math.max(img.width, img.height)); const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); cpPic = c.toDataURL('image/jpeg', 0.85); URL.revokeObjectURL(img.src); $('cpPicPrev').innerHTML = `<div class="row" style="margin:4px 0"><img src="${cpPic}" style="height:60px;border-radius:8px"><button class="sm" id="cpPicX">Remove</button><span class="dim">Sends with your next message</span></div>`; $('cpPicX').onclick = () => { cpPic = null; $('cpPicPrev').innerHTML = ''; }; }; img.src = URL.createObjectURL(f); $('cpFile').value = ''; };
+function cpTakeImage(f) { if (!f || !/^image\//.test(f.type)) return false; const img = new Image(); img.onload = () => { const k = Math.min(1, 1280 / Math.max(img.width, img.height)); const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); cpPic = c.toDataURL('image/jpeg', 0.85); URL.revokeObjectURL(img.src); $('cpPicPrev').innerHTML = `<div class="row" style="margin:4px 0"><img src="${cpPic}" style="height:60px;border-radius:8px"><button class="sm" id="cpPicX">Remove</button><span class="dim">Sends with your next message</span></div>`; $('cpPicX').onclick = () => { cpPic = null; $('cpPicPrev').innerHTML = ''; }; }; img.src = URL.createObjectURL(f); return true; }
+$('cpFile').onchange = () => { cpTakeImage($('cpFile').files[0]); $('cpFile').value = ''; };
+/* paste a picture straight into her chat (or drop one on it) */
+for (const id of ['cpIn', 'cpFullIn']) {
+  $(id).addEventListener('paste', e => { const it = [...(e.clipboardData || {}).items || []].find(x => x.kind === 'file' && /^image\//.test(x.type)); if (it && cpTakeImage(it.getAsFile())) { e.preventDefault(); if (id === 'cpFullIn') cpFullClose(); } });
+  $(id).addEventListener('drop', e => { const f = [...(e.dataTransfer || {}).files || []].find(x => /^image\//.test(x.type)); if (f) { e.preventDefault(); cpTakeImage(f); } });
+}
 $('cpMic').onclick = () => { if (listening && micTarget === 'cpIn') { micOff(); $('cpMic').classList.remove('on'); return; } if (listening) micOff(); micTarget = 'cpIn'; micOn(); $('cpMic').classList.add('on'); };
 /* talking mouth: follow the loudness of the voice clip */
 function cpPlay(url) {
@@ -477,16 +486,19 @@ async function cpSpeak(jobId) {
 }
 async function cpPoll() {
   clearTimeout(cpTimer);
+  const oldLook = CP && CP.setup && JSON.stringify(CP.setup.look);
   CP = await api('/api/companion'); const h = CP.history || [];
+  /* her look changed from the chat: redraw her */
+  if (oldLook && CP.setup && JSON.stringify(CP.setup.look) !== oldLook && $('cpChat').style.display !== 'none') { const full = $('cpFull').style.display !== 'none'; cpAv = await cpLoadAvatar(CP.setup.look, $('cpStage'), full ? 'full' : undefined); if (full) cpTray(); }
   if (h.length > cpSeen) { const fresh = h.slice(cpSeen); cpSeen = h.length; cpRender(); for (const m of fresh) if (m.who === 'them') { if (cpAv) { cpAv.feel(m.text); cpAv.act && cpAv.act(m.text); } if (CP.setup.speak && m.job) cpSpeak(m.job); } }
   else cpRender();
-  if (CP.waiting) cpTimer = setTimeout(cpPoll, CP.stuck ? 6000 : 2000);
+  if (CP.waiting) cpTimer = setTimeout(cpPoll, CP.stuck ? 6000 : 2000); else if ((cpPoll.extra = (cpPoll.extra || 0) + 1) < 15) cpTimer = setTimeout(cpPoll, 3000);
 }
 $('cpSend').onclick = async () => {
   const t = $('cpIn').value.trim(); if (!t && !cpPic) return; $('cpIn').value = '';
   if (cpAv && t) cpAv.feel(t);
   const image = cpPic; cpPic = null; $('cpPicPrev').innerHTML = '';
-  const r = await api('/api/companion/say', { text: t, mode: cpMode, ...(image ? { image } : {}) }); if (r.error) alert(r.error); cpPoll();
+  const r = await api('/api/companion/say', { text: t, mode: cpMode, ...(image ? { image } : {}) }); if (r.error) alert(r.error); cpPoll.extra = 0; cpPoll();
 };
 $('cpIn').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !('ontouchstart' in window)) { e.preventDefault(); $('cpSend').onclick(); } };
 
@@ -599,10 +611,10 @@ async function pc(quiet) {
   $('pcBox').innerHTML = `<div class="card"><div class="row" style="margin:0"><b>${st ? esc(st.pc) : 'Your PC'}</b><span class="tag">${d.reach === 'tailscale' ? 'Tailscale, direct' : d.reach === 'polling' ? 'reached by polling' : 'offline'}</span>${d.reach !== 'tailscale' && !d.tailscaleSetUp ? '<span class="tag">Tailscale not set up on Brenebase</span>' : ''}</div>
     ${st ? `<p class="dim">Checked ${d.statusAge != null ? d.statusAge + ' s ago' : 'just now'}. Up ${Math.round(st.uptimeMin / 60)} h.</p>` : '<p class="dim">No word from the PC agent. Is the PC on and awake, and the agent installed?</p>'}
     <div class="row">${btn('start-all', 'Start everything')}${btn('stop-all', 'Stop everything')}${btn('status', 'Refresh')}${btn('update', 'Update now')}</div></div>
-    ${st ? `<div class="card"><div class="row" style="margin:0"><span class="${loaded ? 'st-done' : 'st-waiting'}">${loaded ? 'loaded' : st.model.server ? 'server up, no model' : 'off'}</span><b>Model</b><span class="dim">${esc(st.model.name)}, ${st.model.context} context</span>${loaded ? btn('model-stop', 'Unload') : btn('model-start', 'Load')}</div>${loaded ? `<div class="dim">${st.model.loaded.map(esc).join(', ')}</div>` : ''}${st.model.lmsFound ? '' : '<p class="st-failed">lms not found on the PC (set LMS)</p>'}</div><div class="card">${helpers}</div>` : ''}
+    ${st ? `<div class="card"><div class="row" style="margin:0"><span class="${loaded ? 'st-done' : 'st-waiting'}">${loaded ? 'loaded' : st.model.server ? 'server up, no model' : 'off'}</span><b>Model</b><span class="dim">${esc(st.model.name)}, ${st.model.context} context</span>${loaded ? btn('model-stop', 'Unload') : btn('model-start', 'Load')}</div><div class="row" style="margin:6px 0 0">${btn('vision-get', 'Get a picture-reading model')}${btn('logs:vision', 'Vision log')}<span class="dim" style="font-size:13px">So she can read pictures you send (downloads Qwen2.5-VL 7B in LM Studio)</span></div>${loaded ? `<div class="dim">${st.model.loaded.map(esc).join(', ')}</div>` : ''}${st.model.lmsFound ? '' : '<p class="st-failed">lms not found on the PC (set LMS)</p>'}</div><div class="card">${helpers}</div>` : ''}
     <div class="card"><div class="row" style="margin:0"><span class="${d.worker.online ? 'st-done' : 'st-waiting'}">${d.worker.online ? 'online' : 'offline'}</span><b>Worker</b><span class="dim">${esc((d.worker.can || []).join(', '))}</span></div>${(d.worker.busy || []).length ? `<div class="dim">Working on: ${d.worker.busy.map(esc).join('; ')}</div>` : ''}${!d.worker.online && st && st.helpers && st.helpers.worker && (st.helpers.worker.log || []).length ? `<div class="dim">Worker's last lines on the PC:</div><pre style="white-space:pre-wrap;font-size:12px">${esc(st.helpers.worker.log.join('\n'))}</pre>` : ''}${st && st.files ? `<div class="dim">PC files: ${Object.entries(st.files).map(([k, v]) => esc(k.split('/').pop() + ' ' + v)).join(', ')}</div>` : ''}</div>
     <pre id="pcOut" style="display:none"></pre>
-    <div class="card"><b>Picture and movie engines (on your PC)</b><div class="dim">Brenebase runs Z-Image Turbo and Illustrious XL itself (Images tab), with stable-diffusion.cpp from F:\AI. MiniMax-H3 movies still go through Brenai Studio until its options are read. These buttons read the PC and change nothing.</div><div class="row"><button class="sm" onclick="studioProbe(this)">Find Brenai Studio</button><button class="sm" onclick="studioLook(this)">Look inside Brenai Studio</button><button class="sm" onclick="enginesFind(this)">Find image and movie engines</button><button class="sm" onclick="enginesHelp(this)">Read the movie engine's options</button></div></div>
+    <div class="card"><b>Picture and movie engines (on your PC)</b><div class="dim">Brenebase runs Z-Image Turbo and Illustrious XL itself (Images tab), with stable-diffusion.cpp from F:\AI. MiniMax-H3 movies still go through Brenai Studio until its options are read. These buttons read the PC and change nothing.</div><div class="row"><button class="sm" onclick="studioProbe(this)">Find Brenai Studio</button><button class="sm" onclick="studioLook(this)">Look inside Brenai Studio</button><button class="sm" onclick="enginesFind(this)">Find image and movie engines</button><button class="sm" onclick="enginesHelp(this)">Read the movie engine's options</button><button class="sm" onclick="studioVision(this)">How does Studio read pictures?</button></div></div>
     <details class="card"><summary><b>Set up the PC (once)</b></summary><p class="dim">In PowerShell on the PC:</p><pre>irm ${location.origin}/pc/install-agent.ps1 | iex</pre><p class="dim">For the direct path, install Tailscale on the PC and put a Tailscale auth key in Brenebase's TS_AUTHKEY secret, and the PC's tailnet name in PC_TAILNET_HOST. Without Tailscale the agent still works by checking in every few seconds.</p></details>`;
 }
 window.pcDo = async (a, b) => { b.disabled = true; b.textContent = '...'; const r = await api('/api/pc/do', { action: a }); $('pcOut').style.display = ''; $('pcOut').textContent = `${a} (${r.via || ''}): ${r.ok ? 'ok' : 'not done'}\n${r.note || ''}`; await pc(); };
@@ -618,6 +630,7 @@ window.copyOut = b => { const pre = b.closest('details').querySelector('pre'); n
 window.skillsSync = async b => { b.disabled = true; b.textContent = 'Reading (see Jobs)...'; await api('/api/skills/sync', {}); };
 window.skillsTry = async () => { const t = $('skTask').value.trim(); if (!t) return; $('skOut').textContent = 'Checking...'; const r = await api('/api/skills/check', { task: t }); $('skOut').textContent = [`Checked by ${r.by}. Used: ${r.used.length ? r.used.join(', ') : 'none'}`, ...(r.errors || []).map(e => 'Could not read: ' + e), '', ...(r.log || [])].join('\n'); };
 async function skillsCard() { const d = await api('/api/skills'); return `<div class="card"><b>Skills (${d.skills.length})</b><div class="dim">Every job checks these before it starts and logs which it used. From your PC: ${d.pc.at ? `${d.pc.count} read ${new Date(d.pc.at).toLocaleString()}` : 'not read yet'}${d.pc.error ? ` (could not read: ${esc(d.pc.error)})` : ''}.</div><div style="margin:6px 0">${d.skills.map(x => `<span class="tag" title="${esc(x.description)}">${esc(x.name)}</span>`).join(' ')}</div><div class="row"><button class="sm" onclick="skillsSync(this)">Read skills from the PC</button></div><div class="row"><input id="skTask" placeholder="Try a task: find a free model for a lamp" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--line);background:#0f1116;color:var(--text)"><button class="sm" onclick="skillsTry()">Check</button></div><pre id="skOut" style="display:block;min-height:0"></pre></div>`; }
+window.studioVision = async b => { b.disabled = true; b.textContent = 'Reading (see Jobs)...'; await api('/api/studio/vision', {}); };
 window.enginesHelp = async b => { b.disabled = true; b.textContent = 'Reading (see Jobs)...'; await api('/api/engines/help', {}); };
 window.enginesFind = async b => { b.disabled = true; b.textContent = 'Looking (see Jobs)...'; await api('/api/engines/find', {}); };
 window.studioLook = async b => { b.disabled = true; b.textContent = 'Reading (see Jobs)...'; await api('/api/studio/look', {}); };

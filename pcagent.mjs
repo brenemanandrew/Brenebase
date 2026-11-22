@@ -6,7 +6,7 @@ import crypto from 'crypto';
 const KEY = process.env.HUB_WORKER_TOKEN || '';
 const PC = process.env.PC_TAILNET_HOST || '';
 const PORT = +process.env.PC_AGENT_PORT || 8765;
-export const ACTIONS = ['update', 'status', 'model-start', 'model-stop', 'start-all', 'stop-all', 'start:wizra', 'stop:wizra', 'start:town', 'stop:town', 'start:worker', 'stop:worker', 'logs:wizra', 'logs:town', 'logs:worker'];
+export const ACTIONS = ['update', 'status', 'model-start', 'model-stop', 'start-all', 'stop-all', 'start:wizra', 'stop:wizra', 'start:town', 'stop:town', 'start:worker', 'stop:worker', 'logs:wizra', 'logs:town', 'logs:worker', 'vision-get', 'logs:vision'];
 
 const poll = { seen: 0, status: null, statusAt: 0, queue: [], waiting: new Map() };
 export const pollOnline = () => Date.now() - poll.seen < 30000;
