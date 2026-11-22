@@ -69,7 +69,7 @@ function wav16(f32, rate) {
 }
 /* project notes on this PC: only files inside these folders can be read (Google Drive for desktop, project folders) */
 const READ_ROOTS = (process.env.READ_ROOTS || 'G:\\My Drive;F:\\Projects;C:\\Program Files (x86)\\World of Warcraft\\_retail_\\Interface\\AddOns').split(';').map(r => path.resolve(r.trim())).filter(Boolean);
-can.push('read', 'readdir');
+can.push('read', 'readdir', 'probe');
 console.log(`hub worker: ${HUB}\ncan do: ${can.join(', ')}`);
 
 const run = (cmd, args, cwd, input, onOut) => new Promise(ok => {
@@ -138,6 +138,28 @@ async function doJob(j) { tail = []; await progress(j, 'started on the PC', '', 
     for (const p of parts.slice(0, 12)) { const a = await t.generate(p.trim(), { voice: v, speed }); rate = a.sampling_rate; pieces.push(a.audio); }
     const all = new Float32Array(pieces.reduce((n, a) => n + a.length, 0)); let o = 0; for (const a of pieces) { all.set(a, o); o += a.length; }
     return { ok: true, text: `spoken with ${v}`, result: { audio64: wav16(all, rate).toString('base64') } };
+  }
+  /* find Brenai Studio on this PC and list how its page talks to its server, so Brenebase can be wired to it */
+  if (j.backend === 'probe') {
+    const ports = [...new Set([+(process.env.STUDIO_PORT || 0), 7860, 7861, 7862, 8188, 8000, 8001, 8080, 8081, 8090, 8765, 8888, 3000, 3001, 5000, 5001, 5173, 4000, 9000].filter(Boolean))];
+    const found = [];
+    for (const port of ports) {
+      for (const host of ['127.0.0.1']) {
+        const base = `http://${host}:${port}`; let html = '';
+        try { const r = await fetch(base + '/', { signal: AbortSignal.timeout(1500) }); html = await r.text(); } catch { continue; }
+        const title = (html.match(/<title>([^<]*)/i) || [])[1] || '';
+        const hit = { url: base, title: title.trim().slice(0, 80), studio: /brenai studio|illustrious|z-image|minimax/i.test(html), apis: [], scripts: [] };
+        /* the page and its own scripts: every '/api/...' or '/prompt'-style path and form field they mention */
+        const srcs = [...html.matchAll(/<script[^>]+src=["']([^"']+)["']/gi)].map(m => m[1]).filter(u => !/^https?:\/\//.test(u)).slice(0, 8);
+        let code = html;
+        for (const sp of srcs) { try { code += '\n' + await (await fetch(new URL(sp, base + '/'), { signal: AbortSignal.timeout(3000) })).text(); hit.scripts.push(sp); } catch { } }
+        hit.apis = [...new Set([...code.matchAll(/["'`](\/(?:api|sdapi|prompt|queue|history|view|upload|generate|run|txt2img|img2img|object_info|system_stats)[\w\/.-]*)/g)].map(m => m[1]))].slice(0, 60);
+        hit.fields = [...new Set([...code.matchAll(/\b(prompt|negative(?:_prompt)?|aspect(?:_ratio)?|width|height|steps|seed|count|batch(?:_size)?|model|ckpt|reference|image|cfg(?:_scale)?|sampler|lora)\s*:/gi)].map(m => m[1]))].slice(0, 30);
+        found.push(hit);
+      }
+    }
+    const studio = found.filter(f => f.studio);
+    return { ok: true, text: (studio.length ? 'Found Brenai Studio:\n' : 'Brenai Studio not found on the usual ports. Open it and tell Brenebase its address (STUDIO_PORT).\n') + JSON.stringify(studio.length ? studio : found, null, 1), result: { probe: found } };
   }
   if (j.backend === 'merge') return merge(j);
   if (j.backend === 'readdir') {

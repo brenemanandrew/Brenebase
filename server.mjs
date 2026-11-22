@@ -319,6 +319,7 @@ http.createServer(async (req, res) => {
       const f = path.join(IMG_DIR, path.basename(img)); const data = `data:${f.endsWith('.png') ? 'image/png' : 'image/webp'};base64,${fs.readFileSync(f).toString('base64')}`;
       return send(res, 200, makeJob({ text: `${b.style || 'Realistic, detailed, natural lighting'}. Keep the same character, outfit, pose and framing. ${j.text}`, tool: 'image', mode: 'edit', area: j.area, autonomy: 'draft', args: { image_url: data }, project: j.project }));
     }
+    if (p === '/api/studio/probe' && req.method === 'POST') { const j = L.add({ tool: 'image', mode: 'studio', backend: 'probe', runsOn: 'pc', label: 'Find Brenai Studio on the PC', text: 'Look for Brenai Studio on the usual local ports and list how its page talks to its server.', status: 'queued' }); if (!workerOnline()) PA.jumpstart(['worker']).catch(() => {}); return send(res, 200, j); }
     if (p === '/api/threads' && req.method === 'GET') return send(res, 200, { threads: TH.list() });
     if (p === '/api/threads' && req.method === 'POST') { const b = await body(req); return send(res, 200, b.id ? TH.update(b.id, b) : TH.open(b)); }
     if (p === '/api/companion' && req.method === 'GET') return send(res, 200, { ...CP.state(), waiting: L.list(80).some(j => j.companion && ['queued', 'running'].includes(j.status)), pc: workerOnline() });
