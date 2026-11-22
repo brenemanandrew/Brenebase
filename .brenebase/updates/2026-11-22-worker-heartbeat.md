@@ -39,3 +39,6 @@ title: Worker stays online during long jobs, runs jobs side by side
 - Companion: messages sent to the PC model are cleaned so user and reply take turns (unanswered messages in a row are joined). Fixes LM Studio "Unable to generate parser for this template" 400. If a template still refuses, it retries with the instructions folded into the first message
 - Studio pictures: a job counts as finished on "finished", "complete", "success" and similar, or when it has files and its note says saved. Fixes the lighthouse job staying "Working" after Studio saved the image
 - Tested with a fake strict template and a fake Studio that answers "finished" and "1/1 image(s) saved": both now finish; 51/51 checks
+- Jobs tab grouped into In progress, Error and Done, with counts; each group folds by tapping its heading
+- Job cards fold by tapping their header; Done cards start folded; open or closed is remembered on the phone
+- Tested in headless Chromium: groups render, a card folds on tap and stays folded through the 5 second refresh, a group folds; no page errors

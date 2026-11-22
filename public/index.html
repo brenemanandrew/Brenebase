@@ -173,8 +173,10 @@ function jobCard(j) {
   const reportBox = rep ? `<div class="card" style="margin:8px 0;border-color:${j.status === 'failed' ? 'var(--bad)' : 'var(--ok)'}"><b>Report</b>${L('Done', rep.done)}${L('Tested', rep.tested)}${L('Not tested', rep.notTested, 'st-waiting')}${L('Blocked', rep.blocked, 'st-failed')}${L('Next', rep.next)}</div>` : '';
   const raw = ['claude-code', 'merge'].includes(j.backend) ? r.text : '';
   const output = j.live || raw || (r.text && j.status === 'failed') || r.diff ? `<details${j.status === 'running' ? ' open' : ''}><summary class="dim">Output${j.status === 'running' ? ' (live)' : ''}</summary><pre>${esc([raw || j.live, r.diff].filter(Boolean).join('\n\n') || r.text)}</pre></details>` : '';
-  return `<div class="card" id="job_${j.id}"><div class="row" style="margin:0"><b>${esc(j.label)}</b>${j.area ? `<span class="tag">${esc(j.area)}</span>` : ''}<span class="tag">${esc(j.runsOn)}</span><span class="st-${j.status}">${j.status}</span></div>
+  const shut = isShut(j);
+  return `<div class="card" id="job_${j.id}"><div class="row jhead" style="margin:0;cursor:pointer" onclick="toggleJob('${j.id}', event)"><span class="dim jarrow">${shut ? '&#9656;' : '&#9662;'}</span><b>${esc(j.label)}</b>${j.area ? `<span class="tag">${esc(j.area)}</span>` : ''}<span class="tag">${esc(j.runsOn)}</span><span class="st-${j.status}">${j.status}</span></div>
   <div class="dim">${esc((j.text || '').slice(0, 160))}</div>
+  <div class="jbody"${shut ? ' style="display:none"' : ''}>
   ${statusLine}${partsLine}
   ${reportBox}
   ${j.stuck ? `<p class="st-waiting">${esc(j.stuck)}</p>` : ''}
@@ -190,7 +192,25 @@ function jobCard(j) {
   ${r.audio ? `<audio controls src="${esc(r.audio)}" style="width:100%;margin-top:6px"></audio>` : ''}
   ${output}
   ${j.partJobs ? `<details${j.status !== 'done' ? ' open' : ''}><summary class="dim">The parts</summary>${j.partJobs.map(jobCard).join('')}</details>` : ''}
-  <div class="row">${btns}<button class="sm" onclick="checkJob('${j.id}', this)">Check status</button>${j.status === 'failed' ? `<button class="sm" onclick="retryJob('${j.id}')">Retry</button>` : ''}${j.status === 'done' && r.text ? `<button class="sm" onclick="speak('${j.id}', this)">&#128266; Read aloud</button>` : ''}</div></div>`;
+  <div class="row">${btns}<button class="sm" onclick="checkJob('${j.id}', this)">Check status</button>${j.status === 'failed' ? `<button class="sm" onclick="retryJob('${j.id}')">Retry</button>` : ''}${j.status === 'done' && r.text ? `<button class="sm" onclick="speak('${j.id}', this)">&#128266; Read aloud</button>` : ''}</div></div></div>`;
+}
+/* job cards fold up by tapping their header. Done cards start folded; whatever you open or close is remembered. */
+const JOB_FOLD = JSON.parse(localStorage.getItem('jobFold') || '{}');
+const isShut = j => j.id in JOB_FOLD ? JOB_FOLD[j.id] : ['done', 'cancelled'].includes(j.status);
+function toggleJob(id, ev) {
+  if (ev && ev.target.closest('button,a')) return;
+  const c = document.getElementById('job_' + id); if (!c) return;
+  const b = c.querySelector(':scope > .jbody'), ar = c.querySelector(':scope > .jhead .jarrow');
+  const shut = b.style.display !== 'none'; b.style.display = shut ? 'none' : ''; ar.innerHTML = shut ? '&#9656;' : '&#9662;';
+  JOB_FOLD[id] = shut; const ks = Object.keys(JOB_FOLD); if (ks.length > 300) delete JOB_FOLD[ks[0]];
+  localStorage.setItem('jobFold', JSON.stringify(JOB_FOLD));
+}
+/* the Jobs tab in three groups; each group folds by tapping its heading */
+const GROUP_FOLD = JSON.parse(localStorage.getItem('groupFold') || '{}');
+function toggleGroup(k) { GROUP_FOLD[k] = !GROUP_FOLD[k]; localStorage.setItem('groupFold', JSON.stringify(GROUP_FOLD)); const g = document.getElementById('grp_' + k); g.style.display = GROUP_FOLD[k] ? 'none' : ''; document.getElementById('grpa_' + k).innerHTML = GROUP_FOLD[k] ? '&#9656;' : '&#9662;'; }
+function jobGroups(list) {
+  const G = [['active', 'In progress', j => ['waiting', 'queued', 'running'].includes(j.status)], ['error', 'Error', j => j.status === 'failed'], ['done', 'Done', j => !['waiting', 'queued', 'running', 'failed'].includes(j.status)]];
+  return G.map(([k, name, f]) => { const js = list.filter(f); return `<h3 style="cursor:pointer;margin:14px 0 6px" onclick="toggleGroup('${k}')"><span class="dim" id="grpa_${k}">${GROUP_FOLD[k] ? '&#9656;' : '&#9662;'}</span> <span class="${k === 'error' && js.length ? 'st-failed' : ''}">${name}</span> <span class="dim">(${js.length})</span></h3><div id="grp_${k}"${GROUP_FOLD[k] ? ' style="display:none"' : ''}>${js.map(jobCard).join('') || '<p class="dim">None.</p>'}</div>`; }).join('');
 }
 /* ---- talk to text: tap to start, it keeps listening (and restarts after pauses) until tapped off ---- */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -413,7 +433,7 @@ window.studioProbe = async b => { b.disabled = true; b.textContent = 'Looking (s
 window.checkJob = async (id, b) => { if (b) b.textContent = 'Checking...'; const j = await api(`/api/jobs/${id}`); const el = document.getElementById('job_' + id); if (el) el.outerHTML = jobCard(j); };
 window.retryJob = async id => { const j = await api(`/api/jobs/${id}/retry`, {}); const el = document.getElementById('job_' + id); if (el) el.outerHTML = jobCard(j); };
 window.act = async (id, what) => { const j = await api(`/api/jobs/${id}/${what}`, {}); jobs(); if ($('last').innerHTML.includes(id)) $('last').innerHTML = jobCard(j); };
-async function jobs() { const d = await api('/api/jobs' + (TAB ? `?thread=${TAB}` : '')); $('jobList').innerHTML = d.jobs.map(jobCard).join('') || '<p class="dim">No jobs yet.</p>'; }
+async function jobs() { const d = await api('/api/jobs' + (TAB ? `?thread=${TAB}` : '')); $('jobList').innerHTML = d.jobs.length ? jobGroups(d.jobs) : '<p class="dim">No jobs yet.</p>'; }
 
 async function boot() {
   CAT = await api('/api/catalogue');
