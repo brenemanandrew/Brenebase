@@ -40,7 +40,7 @@ const KEY = (process.env.HUB_WORKER_TOKEN || '').trim();
 const PORT = +process.env.AGENT_PORT || 8765;
 const LMS = process.env.LMS || path.join(HOME, '.lmstudio', 'bin', process.platform === 'win32' ? 'lms.exe' : 'lms');
 const MODEL = process.env.MODEL || 'mn-violet-lotus-12b';
-const CTX = process.env.MODEL_CONTEXT || process.env.WIZRA_CONTEXT || '32768';
+const CTX = process.env.MODEL_CONTEXT || process.env.WIZRA_CONTEXT || '16384';   /* 16k is plenty for her chat (24 messages) and leaves the picture engine room on the graphics card */
 /* installed layout: Brenebase\pc\brenebase-agent.mjs and Brenebase\worker\hub-worker.mjs */
 const BASE = process.env.BRENEBASE_DIR || path.dirname(HERE);
 if (!KEY) { console.log('Set HUB_WORKER_TOKEN first (the PC key).'); process.exit(1); }

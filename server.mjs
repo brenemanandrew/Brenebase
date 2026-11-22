@@ -471,7 +471,8 @@ http.createServer(async (req, res) => {
       /* say why a reply is not coming, instead of "thinking" forever */
       const w = L.list(80).find(j => j.companion && ['queued', 'running'].includes(j.status));
       const age = w ? Date.now() - w.at : 0;
-      const stuck = !w || age < 20000 ? '' : !workerOnline() ? 'Your PC worker is offline: PC tab, Start everything (or check the PC is on).' : !worker.can.includes('pc-model') ? 'The model is not loaded on your PC. Brenebase asked the PC to load it; if that does not work, PC tab, Load. Brenai Studio in Coding mode also unloads it.' : w.status === 'queued' ? 'Waiting for the PC worker to pick it up.' : age > 120000 ? 'The PC model is taking a long time; it may be busy or stuck. PC tab, Unload then Load.' : '';
+      const drawing = (worker.busy || []).some(x => /^Images:/.test(x));
+      const stuck = !w || age < 4000 ? '' : drawing && w.status === 'queued' ? 'Your PC is drawing a picture; she answers as soon as it is done (they share the graphics card).' : age < 20000 ? '' : !workerOnline() ? 'Your PC worker is offline: PC tab, Start everything (or check the PC is on).' : !worker.can.includes('pc-model') ? 'The model is not loaded on your PC. Brenebase asked the PC to load it; if that does not work, PC tab, Load. Brenai Studio in Coding mode also unloads it.' : w.status === 'queued' ? 'Waiting for the PC worker to pick it up.' : age > 120000 ? 'The PC model is taking a long time; it may be busy or stuck. PC tab, Unload then Load.' : '';
       return send(res, 200, { ...CP.state(), waiting: !!w, stuck, pc: workerOnline() });
     }
     if (p === '/api/companion/setup' && req.method === 'POST') { const b = await body(req); return send(res, 200, { setup: CP.setup(b) }); }
