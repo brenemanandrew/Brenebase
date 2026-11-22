@@ -93,8 +93,8 @@ export const TOOLS = [
     },
   },
   {
-    id: 'image', type: 'make2d', name: 'Images', runsOn: 'meshy', backend: 'meshy',
-    what: '2D pictures: concept art, character sheets, turnarounds (front and back), style tests. Meshy makes them (spends credits, waits for OK), or your personal Copilot by copy and paste.',
+    id: 'image', type: 'make2d', name: 'Images', runsOn: 'pc', backend: 'meshy',
+    what: '2D pictures: realistic, anime and manga on your PC (free), from a pasted picture too; Meshy concept art (spends credits, waits for OK) or Copilot by copy and paste.',
     built: ['Brenai picture renderer (avatar.snapshot, as used by the picture pack)', 'Meshy text to image and image to image (on your account)', 'Microsoft Copilot image creation'],
     modes: {
       model:   { label: "Wizra's real model (Brenai)", does: "Renders her actual 3D model with Brenai's own picture renderer on your PC: front and back, T-pose or a pose, any face. Free and exact. Add Restyle with Meshy for a realistic version.", backend: 'pc-run', runsOn: 'pc', words: ['render wizra', 'render her', 'her model', 'wizra model', 'snapshot of wizra'] },

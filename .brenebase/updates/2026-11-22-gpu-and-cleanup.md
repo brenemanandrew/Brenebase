@@ -16,3 +16,13 @@ title: Pictures and the companion share the graphics card; cleanup pass
 
 ## Not tested
 - On Andrew's PC (real unload and reload times, his card's memory)
+
+## Done (cleanup)
+- Tools tab: one Settings card with icon rows (voice, Copilot check with its clean rate as a chip, connected services as green or red chips); Tags fold into chips with a remove button; each tool is a folded card with an icon, where it runs and its modes as chips, details when opened. 1,422 words down to 137
+- Projects tab: each project is a folded card with a two-line summary and coloured chips (problems, open, works, unreadable notes); the full lists open on tap. 553 words down to 242
+- PC tab: the Studio and engine buttons moved into one folded Diagnostics card; the picture reader row shortened
+- Shared look: chips, folded cards and icon rows used the same way across tabs
+- Images tool label says it runs on the PC (was Meshy), with an up to date description
+
+## Tested
+- Headless Chromium on an emulated Pixel 7: every tab drawn, screenshots looked at, no page errors; node test.mjs 61/61
