@@ -36,7 +36,7 @@ h3{margin:18px 0 6px}.mode{margin:4px 0 4px 10px}
 .pnum{display:inline-block;width:22px;height:22px;border-radius:50%;background:var(--acc);color:#081020;text-align:center;font-weight:700;font-size:13px;line-height:22px}
 </style></head><body>
 <header><b>Brenebase</b><span class="dim" id="lights" style="cursor:pointer" title="Open the PC tab"><span id="adot" class="dot"></span> PC <span id="mdot" class="dot"></span> Model <span id="wdot" class="dot"></span> Worker</span>
-<nav><button data-tab="send" class="on">Send</button><button data-tab="jobs">Jobs</button><button data-tab="companion" id="cpTab">Companion</button><button data-tab="projects">Projects</button><button data-tab="pc">PC</button><button data-tab="tools">Tools</button></nav></header>
+<nav><button data-tab="send" class="on">Send</button><button data-tab="jobs">Jobs</button><button data-tab="images">Images</button><button data-tab="companion" id="cpTab">Companion</button><button data-tab="projects">Projects</button><button data-tab="pc">PC</button><button data-tab="tools">Tools</button></nav></header>
 <div id="tabbar" style="display:flex;gap:6px;overflow-x:auto;padding:8px 14px;border-bottom:1px solid var(--line)"></div>
 <div id="tabNew" class="card" style="display:none;max-width:720px;margin:8px auto"><div class="row" style="margin:0"><input id="tnName" placeholder="Tab name" style="flex:1;min-width:120px;padding:8px;border-radius:8px;border:1px solid var(--line);background:#0f1116;color:var(--text)"><select id="tnProj"></select><button class="go" id="tnAdd">Add tab</button><button class="sm" id="tnX">Cancel</button></div><div class="dim">Pick a project to tie everything in this tab to it, or leave it blank for a plain conversation.</div></div>
 <main>
@@ -77,6 +77,19 @@ h3{margin:18px 0 6px}.mode{margin:4px 0 4px 10px}
     <div class="row"><input id="sp_repo" placeholder="Repo (owner/name)" value="brenemanandrew/Brenelandtest" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--line);background:#0f1116;color:var(--text)"><button class="go" id="sp_send">Send the parts</button></div>
   </div>
   <div id="last"></div>
+</section>
+<section id="images" style="display:none">
+  <div class="card">
+    <textarea id="imPrompt" placeholder="What to make. A lighthouse at sunset, warm light, waves on the rocks." style="min-height:80px"></textarea>
+    <h4 style="margin:10px 0 4px;color:var(--dim);font-size:14px">Model</h4><div class="pills" id="imModel"></div>
+    <h4 style="margin:10px 0 4px;color:var(--dim);font-size:14px">Shape</h4><div class="pills" id="imSize"></div>
+    <div class="row"><label class="dim">How many <select id="imCount"><option>1</option><option>2</option><option>3</option><option>4</option></select></label><label class="dim">Steps <input id="imSteps" type="number" min="1" max="80" style="width:64px;padding:6px;border-radius:8px;border:1px solid var(--line);background:#0f1116;color:var(--text)"></label></div>
+    <details><summary class="dim">More: leave out, seed, guidance</summary>
+      <input id="imNeg" placeholder="Leave out (negative prompt)" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--line);background:#0f1116;color:var(--text);margin:6px 0">
+      <div class="row"><input id="imSeed" placeholder="Seed (blank = random)" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--line);background:#0f1116;color:var(--text)"><input id="imCfg" placeholder="Guidance" style="width:96px;padding:8px;border-radius:8px;border:1px solid var(--line);background:#0f1116;color:var(--text)"></div></details>
+    <div class="row"><button class="go" id="imGo">Make it</button><span class="dim" id="imNote">Runs on your PC through Brenebase. Brenai Studio is not needed.</span></div>
+  </div>
+  <div id="imList"></div>
 </section>
 <section id="jobs" style="display:none"><div id="jobList"></div></section>
 <section id="projects" style="display:none"><div class="row"><button class="sm" id="syncBtn">Update notes now</button><span id="syncMsg" class="dim"></span></div><div id="projList"></div></section>
@@ -136,7 +149,7 @@ const md = t => { const e = String(t || '').replace(/[&<>"]/g, c => ({ '&': '&am
   }).join('')).join(''); };
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-document.querySelectorAll('nav button').forEach(b => b.onclick = () => { document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b)); for (const s of ['send', 'jobs', 'companion', 'projects', 'pc', 'tools']) $(s).style.display = s === b.dataset.tab ? '' : 'none'; if (b.dataset.tab === 'jobs') jobs(); if (b.dataset.tab === 'projects') projects(); if (b.dataset.tab === 'pc') pc(); if (b.dataset.tab === 'companion') companion(); tabs(); });
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => { document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b)); for (const s of ['send', 'jobs', 'images', 'companion', 'projects', 'pc', 'tools']) $(s).style.display = s === b.dataset.tab ? '' : 'none'; if (b.dataset.tab === 'jobs') jobs(); if (b.dataset.tab === 'images') imTab(); if (b.dataset.tab === 'projects') projects(); if (b.dataset.tab === 'pc') pc(); if (b.dataset.tab === 'companion') companion(); tabs(); });
 $('loginBtn').onclick = async () => {
   const r = await fetch('/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: $('pw').value }) }).catch(() => null);
   if (!r) { $('loginMsg').textContent = 'Brenebase did not answer. Check your connection.'; return; }
@@ -155,6 +168,29 @@ function showDoes() {
 $('tool').onchange = () => fillModes(); $('mode').onchange = showDoes;
 
 let routed = null;
+/* ---- Images: the picture models on the PC, run by Brenebase ---- */
+const IM_MODELS = [['realistic', 'Realistic (Z-Image Turbo)', 8], ['anime', 'Anime (Illustrious XL)', 28], ['manga', 'Manga (Illustrious + LoRA)', 28]];
+const IM_SIZES = [['1:1', 'Square', 1024, 1024], ['2:3', 'Portrait', 832, 1216], ['3:2', 'Landscape', 1216, 832], ['9:16', 'Phone', 768, 1344], ['16:9', 'Wide', 1344, 768]];
+let IM = { model: localStorage.getItem('imModel') || 'realistic', size: localStorage.getItem('imSize') || '1:1' };
+function imPills() {
+  $('imModel').innerHTML = IM_MODELS.map(([k, n]) => `<button data-k="${k}" class="${IM.model === k ? 'on' : ''}">${n}</button>`).join('');
+  $('imSize').innerHTML = IM_SIZES.map(([k, n]) => `<button data-s="${k}" class="${IM.size === k ? 'on' : ''}">${n}</button>`).join('');
+  $('imModel').querySelectorAll('button').forEach(b => b.onclick = () => { IM.model = b.dataset.k; localStorage.setItem('imModel', IM.model); $('imSteps').placeholder = String(IM_MODELS.find(m => m[0] === IM.model)[2]); imPills(); });
+  $('imSize').querySelectorAll('button').forEach(b => b.onclick = () => { IM.size = b.dataset.s; localStorage.setItem('imSize', IM.size); imPills(); });
+  $('imSteps').placeholder = String(IM_MODELS.find(m => m[0] === IM.model)[2]);
+}
+async function imTab() {
+  imPills();
+  const d = await api('/api/jobs'); const js = (d.jobs || []).filter(j => j.tool === 'image' && ['realistic', 'anime', 'manga', 'h3', 'model'].includes(j.mode)).slice(0, 30);
+  $('imList').innerHTML = js.map(j => { const r = j.result || {}; return `<div class="card"><div class="row" style="margin:0"><span class="st-${j.status}">${j.status}</span><span class="dim" style="flex:1">${esc(j.label.replace(/^Images: /, ''))}</span>${j.status === 'failed' ? `<button class="sm" onclick="retryJob('${j.id}')">Retry</button>` : ''}</div><div style="margin:4px 0">${esc((j.sd && j.sd.prompt) || j.text || '').slice(0, 200)}</div>${j.step && ['queued', 'running'].includes(j.status) ? `<div class="st-running dim">${esc(j.step)}</div>` : ''}${j.error ? `<div class="st-failed" style="white-space:pre-wrap;font-size:13px">${esc(String(j.error).slice(0, 400))}</div>` : ''}${(r.images || []).map(u => `<a href="${esc(u)}" target="_blank" download><img src="${esc(u)}" style="width:48%;border-radius:8px;margin:4px 1%"></a>`).join('')}</div>`; }).join('') || '<p class="dim">Nothing made yet.</p>';
+}
+$('imGo').onclick = async () => {
+  const t = $('imPrompt').value.trim(); if (!t) return; const sz = IM_SIZES.find(x => x[0] === IM.size);
+  $('imGo').disabled = true;
+  try { const j = await api('/api/jobs', { text: t, tool: 'image', mode: IM.model, project: SENDPJ || undefined, args: { prompt: t, count: +$('imCount').value, width: sz[2], height: sz[3], steps: $('imSteps').value || undefined, seed: $('imSeed').value, cfg: $('imCfg').value, negative: $('imNeg').value } }); if (j.error) $('imNote').textContent = j.error; await imTab(); }
+  finally { $('imGo').disabled = false; }
+};
+setInterval(() => { if ($('images').style.display !== 'none') imTab().catch(() => { }); }, 5000);
 /* ---- Go: Brenebase thinks about the whole request, shows the plan, Run sends it ---- */
 let PLAN = null, SENDPJ = localStorage.getItem('sendProj') || '';
 /* the project you are working in: everything sent from here uses it (its rules, what is known, private stays local) */
@@ -565,7 +601,7 @@ async function pc(quiet) {
     ${st ? `<div class="card"><div class="row" style="margin:0"><span class="${loaded ? 'st-done' : 'st-waiting'}">${loaded ? 'loaded' : st.model.server ? 'server up, no model' : 'off'}</span><b>Model</b><span class="dim">${esc(st.model.name)}, ${st.model.context} context</span>${loaded ? btn('model-stop', 'Unload') : btn('model-start', 'Load')}</div>${loaded ? `<div class="dim">${st.model.loaded.map(esc).join(', ')}</div>` : ''}${st.model.lmsFound ? '' : '<p class="st-failed">lms not found on the PC (set LMS)</p>'}</div><div class="card">${helpers}</div>` : ''}
     <div class="card"><div class="row" style="margin:0"><span class="${d.worker.online ? 'st-done' : 'st-waiting'}">${d.worker.online ? 'online' : 'offline'}</span><b>Worker</b><span class="dim">${esc((d.worker.can || []).join(', '))}</span></div>${(d.worker.busy || []).length ? `<div class="dim">Working on: ${d.worker.busy.map(esc).join('; ')}</div>` : ''}${!d.worker.online && st && st.helpers && st.helpers.worker && (st.helpers.worker.log || []).length ? `<div class="dim">Worker's last lines on the PC:</div><pre style="white-space:pre-wrap;font-size:12px">${esc(st.helpers.worker.log.join('\n'))}</pre>` : ''}${st && st.files ? `<div class="dim">PC files: ${Object.entries(st.files).map(([k, v]) => esc(k.split('/').pop() + ' ' + v)).join(', ')}</div>` : ''}</div>
     <pre id="pcOut" style="display:none"></pre>
-    <div class="card"><b>Brenai Studio (image models on your PC)</b><div class="dim">Finds Brenai Studio on this PC and lists how it takes requests, so Brenebase can send image jobs to Illustrious XL, Z-Image Turbo and MiniMax-H3. Keep Brenai Studio open while it looks.</div><div class="row"><button class="sm" onclick="studioProbe(this)">Find Brenai Studio</button><button class="sm" onclick="studioLook(this)">Look inside Brenai Studio</button><button class="sm" onclick="enginesFind(this)">Find image and movie engines</button></div></div>
+    <div class="card"><b>Picture and movie engines (on your PC)</b><div class="dim">Brenebase runs Z-Image Turbo and Illustrious XL itself (Images tab), with stable-diffusion.cpp from F:\AI. MiniMax-H3 movies still go through Brenai Studio until its options are read. These buttons read the PC and change nothing.</div><div class="row"><button class="sm" onclick="studioProbe(this)">Find Brenai Studio</button><button class="sm" onclick="studioLook(this)">Look inside Brenai Studio</button><button class="sm" onclick="enginesFind(this)">Find image and movie engines</button><button class="sm" onclick="enginesHelp(this)">Read the movie engine's options</button></div></div>
     <details class="card"><summary><b>Set up the PC (once)</b></summary><p class="dim">In PowerShell on the PC:</p><pre>irm ${location.origin}/pc/install-agent.ps1 | iex</pre><p class="dim">For the direct path, install Tailscale on the PC and put a Tailscale auth key in Brenebase's TS_AUTHKEY secret, and the PC's tailnet name in PC_TAILNET_HOST. Without Tailscale the agent still works by checking in every few seconds.</p></details>`;
 }
 window.pcDo = async (a, b) => { b.disabled = true; b.textContent = '...'; const r = await api('/api/pc/do', { action: a }); $('pcOut').style.display = ''; $('pcOut').textContent = `${a} (${r.via || ''}): ${r.ok ? 'ok' : 'not done'}\n${r.note || ''}`; await pc(); };
@@ -577,6 +613,7 @@ window.speak = async (id, b) => { b.disabled = true; b.textContent = 'Voice on t
 window.restyle = async (id, style) => { const k = await api(`/api/jobs/${id}/restyle`, { style }); $('last').innerHTML = jobCard(k); jobs(); };
 window.pasteBack = async id => { const v = $('ra_' + id).value.trim(); if (!v) return; await api(`/api/jobs/${id}/answer`, { text: v }); jobs(); };
 window.openDoll = async id => { const j = await api(`/api/jobs/${id}`); if (!j.result || !j.result.doll) return; document.querySelector('nav button[data-tab=companion]').click(); await new Promise(r => setTimeout(r, 400)); CP = await api('/api/companion'); cpPending = j.result.doll; cpSetupView(!!CP.setup); };
+window.enginesHelp = async b => { b.disabled = true; b.textContent = 'Reading (see Jobs)...'; await api('/api/engines/help', {}); };
 window.enginesFind = async b => { b.disabled = true; b.textContent = 'Looking (see Jobs)...'; await api('/api/engines/find', {}); };
 window.studioLook = async b => { b.disabled = true; b.textContent = 'Reading (see Jobs)...'; await api('/api/studio/look', {}); };
 window.studioProbe = async b => { b.disabled = true; b.textContent = 'Looking (see Jobs)...'; await api('/api/studio/probe', {}); };

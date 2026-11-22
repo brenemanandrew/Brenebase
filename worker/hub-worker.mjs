@@ -71,7 +71,7 @@ function wav16(f32, rate) {
 }
 /* project notes on this PC: only files inside these folders can be read (Google Drive for desktop, project folders) */
 const READ_ROOTS = (process.env.READ_ROOTS || 'G:\\My Drive;F:\\Projects;C:\\Program Files (x86)\\World of Warcraft\\_retail_\\Interface\\AddOns').split(';').map(r => path.resolve(r.trim())).filter(Boolean);
-can.push('read', 'readdir', 'probe', 'studio', 'studio-image', 'engines');
+can.push('read', 'readdir', 'probe', 'studio', 'studio-image', 'engines', 'sd-image', 'engine-help');
 console.log(`hub worker: ${HUB}\ncan do: ${can.join(', ')}`);
 /* things can come up after the worker (LM Studio's server, Claude Code, the voice pack): look again every minute */
 setInterval(async () => {
@@ -184,6 +184,38 @@ async function doJob(j) { await progress(j, 'started on the PC', '', true);
   /* find Brenai Studio on this PC and list how its page talks to its server, so Brenebase can be wired to it */
   /* where Brenai Studio's image and movie engines live, so Brenebase can run them itself: the program behind port 7860,
      the lines in its code that start an engine, engine programs and model files on the drives. Reads only, changes nothing. */
+  /* pictures made right here with stable-diffusion.cpp (the engine Brenai Studio used), no Studio needed.
+     SD_CLI and IMG_MODELS can point elsewhere; the defaults are where the engine finder found them. */
+  if (j.backend === 'sd-image') {
+    const SD = process.env.SD_CLI || 'F:\\AI\\minimax-h3\\sd-cli\\sd-cli.exe', M = process.env.IMG_MODELS || 'F:\\AI\\image-models';
+    if (!fs.existsSync(SD)) return { ok: false, error: `The picture engine is not at ${SD}. Set SD_CLI to where sd-cli.exe is.` };
+    const b = j.sd || {}, eng = b.engine || 'zimage';
+    const W = Math.max(256, Math.min(2048, Math.round((+b.width || 1024) / 64) * 64)), Hh = Math.max(256, Math.min(2048, Math.round((+b.height || 1024) / 64) * 64));
+    const n = Math.max(1, Math.min(8, +b.count || 1));
+    const base = eng === 'zimage'
+      ? ['--diffusion-model', path.join(M, 'z-image', 'z_image_turbo-Q8_0.gguf'), '--vae', path.join(M, 'z-image', 'ae.safetensors'), '--llm', path.join(M, 'z-image', 'Qwen3-4B-Instruct-2507-Q4_K_M.gguf'), '--cfg-scale', String(b.cfg ?? 1), '--steps', String(b.steps || 8), '--diffusion-fa']
+      : ['-m', path.join(M, 'illustrious', 'Illustrious-XL-v2.0.safetensors'), '--vae', path.join(M, 'illustrious', 'sdxl_vae-fp16-fix.safetensors'), '--cfg-scale', String(b.cfg ?? 6), '--steps', String(b.steps || 28), '--sampling-method', 'euler_a', ...(eng === 'manga' ? ['--lora-model-dir', path.join(M, 'loras')] : [])];
+    const missing = base.filter((x, i) => base[i - 1] && /^(--diffusion-model|--vae|--llm|-m)$/.test(base[i - 1]) && !fs.existsSync(x));
+    if (missing.length) return { ok: false, error: `Model file missing: ${missing.join(', ')}` };
+    const prompt = (eng === 'manga' ? '<lora:manga-style:0.8> ' : '') + String(b.prompt || j.text || '').slice(0, 2000);
+    const neg = String(b.negative || (eng === 'zimage' ? '' : 'lowres, bad anatomy, bad hands, text, watermark, blurry')).slice(0, 1000);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bb-img-')), images = [], logs = [];
+    for (let i = 0; i < n; i++) {
+      const seed = b.seed != null && b.seed !== '' ? +b.seed + i : Math.floor(Math.random() * 2 ** 31), out = path.join(dir, `${eng}-${seed}.png`);
+      await progress(j, `picture ${i + 1} of ${n} (${eng}, ${W}x${Hh})`, '', true);
+      const r = await run(SD, [...base, '-p', prompt, ...(neg ? ['-n', neg] : []), '-W', String(W), '-H', String(Hh), '-s', String(seed), '-o', out], path.dirname(SD), null, t => progress(j, `picture ${i + 1} of ${n}`, t));
+      if (fs.existsSync(out)) images.push({ name: path.basename(out), data: fs.readFileSync(out).toString('base64') }); else logs.push((r.err || r.out).slice(-800));
+    }
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch { }
+    return { ok: images.length > 0, text: `${images.length} of ${n} picture(s) made on your PC with ${eng === 'zimage' ? 'Z-Image Turbo' : eng === 'manga' ? 'Illustrious XL + manga LoRA' : 'Illustrious XL'} (${W}x${Hh}).`, result: { images64: images }, error: images.length ? undefined : `The engine made no picture:\n${logs.join('\n---\n')}` };
+  }
+  /* the engine's own list of options (to wire the movie model up exactly) */
+  if (j.backend === 'engine-help') {
+    const SD = process.env.SD_CLI || 'F:\\AI\\minimax-h3\\sd-cli\\sd-cli.exe'; if (!fs.existsSync(SD)) return { ok: false, error: `Not found: ${SD}` };
+    const r = await run(SD, ['--help'], path.dirname(SD)); const extra = fs.readdirSync(path.dirname(SD)).filter(f => /\.(md|txt|bat|ps1|cmd|json)$/i.test(f)).slice(0, 20).map(f => { try { return `--- ${f}\n` + fs.readFileSync(path.join(path.dirname(SD), f), 'utf8').slice(0, 6000); } catch { return ''; } }).join('\n');
+    const up = path.dirname(path.dirname(SD)); const more = fs.existsSync(up) ? fs.readdirSync(up).filter(f => /\.(md|txt|bat|ps1|cmd|py|json)$/i.test(f)).slice(0, 20).map(f => { try { return `--- ${path.join(up, f)}\n` + fs.readFileSync(path.join(up, f), 'utf8').slice(0, 8000); } catch { return ''; } }).join('\n') : '';
+    return { ok: true, text: `${SD} --help\n${(r.out || r.err).slice(0, 30000)}\n\nFiles next to it:\n${extra}\n\nFiles in ${up}:\n${more}`.slice(0, 60000) };
+  }
   if (j.backend === 'engines') {
     const out = { studio: null, engineLines: [], programs: [], models: {} };
     if (process.platform === 'win32') {

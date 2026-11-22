@@ -28,12 +28,27 @@
  "tools": [
   {
    "name": "Send",
-   "what": "Route it or Split it",
+   "what": "Go: a model plans the parts (PC model for private work), Run sends them; project pills pick the project",
    "use_when": "every new thought"
   },
   {
+   "name": "Images tab",
+   "what": "Z-Image Turbo, Illustrious XL and the manga LoRA, run by the Brenebase worker on the PC with stable-diffusion.cpp (F:\\AI\\minimax-h3\\sd-cli\\sd-cli.exe, models in F:\\AI\\image-models)",
+   "use_when": "any picture; Brenai Studio is not needed"
+  },
+  {
+   "name": "Companion",
+   "what": "chat on the PC model, full-body doll, look editor, wardrobe, reactions per body part, pictures read by a vision model",
+   "use_when": "talking, venting, roleplay"
+  },
+  {
+   "name": "Doll skill (skills/doll.md)",
+   "what": "the PC model makes and edits dolls from a description; Doll tool on Send",
+   "use_when": "changing the companion's look or making a new doll"
+  },
+  {
    "name": "PC tab",
-   "what": "load the model, start bridges and worker",
+   "what": "load the model, start bridges and worker, Update now, find the picture and movie engines",
    "use_when": "the PC side is off"
   },
   {
@@ -52,6 +67,11 @@
    "name": "Optional",
    "value": "ANTHROPIC_API_KEY, MESHY_API_KEY, GITHUB_TOKEN, TS_AUTHKEY, PC_TAILNET_HOST, COPILOT_TOKEN, HUB_WORK_LOCAL, HUB_UPDATE_DIRS",
    "note": "see server.mjs header"
+  },
+  {
+   "name": "PC worker paths (optional env on the PC)",
+   "value": "SD_CLI, IMG_MODELS, VISION_MODEL",
+   "note": "defaults: F:\\AI\\minimax-h3\\sd-cli\\sd-cli.exe, F:\\AI\\image-models, the first LM Studio model of type vlm"
   }
  ],
  "working": [
@@ -64,9 +84,10 @@
  ],
  "broken": [],
  "open": [
-  "Deploy to brenebase.fly.dev",
   "Fold the mocap page and clip converter in for both rigs",
-  "Valinfor card needs Andrew's info"
+  "Valinfor card needs Andrew's info",
+  "MiniMax-H3 movies still go through Brenai Studio: read the engine's options (PC tab), then run it in the worker",
+  "Picture reading needs a vision model in LM Studio (or Claude chosen in the companion settings)"
  ],
  "rules": [
   "Never use em dashes",

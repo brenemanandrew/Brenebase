@@ -54,12 +54,12 @@ export function ruleRoute(thought) {
   const twoD = ['illustration', 'concept art', 'concept image', 'character sheet', 'reference sheet', 'turnaround', 'realistic image', 'anime looking', 'drawing of', 'picture of', 'image of', 'portrait of', 'key art', 'artwork', 'mood board', '2d', 'images', 'images of', 'pictures', 'pictures of', 'renders', 'pics of', 'photos of'].some(w => has(t, w)) && !['3d model', 'model of', 'glb', 'mesh', 'rig', 'from this picture', 'from a photo', 'image to 3d'].some(w => has(t, w));
   if (twoD && (has(t, 'wizra') || has(t, 'my character wizra')) && !['edit this image', 'restyle'].some(w => has(t, w))) { best = { tool: 'image', mode: 'model', score: 5 }; why = "A picture of Wizra: rendered from her real model with Brenai's renderer (Restyle with Meshy for other styles)."; }
   else if (twoD) {
-    /* pictures are made on your PC by Brenai Studio unless Meshy is named or a picture is being edited */
+    /* pictures are made on your PC by Brenebase (stable-diffusion.cpp) unless Meshy is named or a picture is being edited */
     const ed = ['edit this image', 'edit the image', 'change this picture', 'change the image', 'restyle'].some(w => has(t, w));
-    const anime = ['anime', 'manga', 'cel shaded', 'cel shade', 'toon', 'chibi', 'cartoon', 'stylized'].some(w => has(t, w)), ref = ['reference image', 'like this picture', 'from this image', 'h3'].some(w => has(t, w));
-    const mode = has(t, 'meshy') ? (ed ? 'edit' : 'concept') : ed ? 'edit' : ref ? 'h3' : anime ? 'anime' : 'realistic';
+    const manga = ['manga'].some(w => has(t, w)), anime = ['anime', 'manga', 'cel shaded', 'cel shade', 'toon', 'chibi', 'cartoon', 'stylized'].some(w => has(t, w)), ref = ['reference image', 'like this picture', 'from this image', 'h3'].some(w => has(t, w));
+    const mode = has(t, 'meshy') ? (ed ? 'edit' : 'concept') : ed ? 'edit' : ref ? 'h3' : manga ? 'manga' : anime ? 'anime' : 'realistic';
     best = { tool: 'image', mode, score: 5 };
-    why = { edit: 'Changing a picture: Meshy image to image.', concept: 'Meshy named: Meshy concept art.', h3: 'A picture from a reference: MiniMax-H3 in Brenai Studio on your PC.', anime: 'Anime or stylized: Illustrious XL in Brenai Studio on your PC (free).', realistic: 'A picture: Z-Image Turbo in Brenai Studio on your PC (free).' }[mode];
+    why = { edit: 'Changing a picture: Meshy image to image.', concept: 'Meshy named: Meshy concept art.', h3: 'A picture from a reference: MiniMax-H3 (through Brenai Studio until Brenebase runs it).', manga: 'Manga: Illustrious XL with your manga LoRA, run by Brenebase on your PC (free).', anime: 'Anime or stylized: Illustrious XL, run by Brenebase on your PC (free).', realistic: 'A picture: Z-Image Turbo, run by Brenebase on your PC (free).' }[mode];
   }
   const motion = !twoD && isMotion && pickMotion(t);
   const m3 = !twoD && !motion && is3d && pick3d(t);

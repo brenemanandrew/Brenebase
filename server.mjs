@@ -170,8 +170,16 @@ function makeJob({ text, tool, mode, area, autonomy = 'draft', args = {}, repo, 
   if (tool === 'image' && mode === 'model' && !args.specs) args = { ...args, specs: wizraSpecs(text) };
   /* Brenai Studio picture: what its page sends as api('image', { ...imageParams(), prompt }). Field names are confirmed
      from the Look inside Brenai Studio output; STUDIO_FIELDS can override them without a PC update. */
+  /* pictures on the PC with stable-diffusion.cpp, run by the Brenebase worker itself (no Brenai Studio). The Images tab sends exact settings in args. */
+  let sd;
+  if (tool === 'image' && ['realistic', 'anime', 'manga'].includes(mode)) {
+    const n = Math.max(1, Math.min(8, +args.count || +((String(text).match(/\b(\d{1,2})\s*(images|pictures|pics|renders|versions)\b/i) || [])[1]) || 1));
+    const ar = (String(text).match(/\b(16:9|9:16|1:1|4:3|3:4|3:2|2:3)\b/) || [])[1] || (/portrait|full body|t-?pose|standing/i.test(text) ? '2:3' : /landscape|wide|scene/i.test(text) ? '3:2' : '1:1');
+    const SIZE = { '1:1': [1024, 1024], '2:3': [832, 1216], '3:2': [1216, 832], '9:16': [768, 1344], '16:9': [1344, 768], '3:4': [896, 1152], '4:3': [1152, 896] }[ar];
+    sd = { engine: { realistic: 'zimage', anime: 'illustrious', manga: 'manga' }[mode], prompt: String(args.prompt || text).replace(/^\s*[\w\s]{1,30}:\s*/, '').replace(/\b\d{1,2}\s*(images|pictures|pics|renders|versions)\b/ig, '').trim().slice(0, 2000), count: n, width: +args.width || SIZE[0], height: +args.height || SIZE[1], ...(args.steps ? { steps: +args.steps } : {}), ...(args.cfg !== undefined && args.cfg !== '' ? { cfg: +args.cfg } : {}), ...(args.seed !== undefined && args.seed !== '' ? { seed: +args.seed } : {}), ...(args.negative ? { negative: String(args.negative) } : {}) };
+  }
   let studioBody;
-  if (tool === 'image' && ['realistic', 'anime', 'h3'].includes(mode)) {
+  if (tool === 'image' && ['h3'].includes(mode)) {
     const engine = { realistic: 'zimage', anime: 'illustrious', h3: 'h3' }[mode];
     const n = Math.max(1, Math.min(8, +((String(text).match(/\b(\d{1,2})\s*(images|pictures|pics|renders|versions)\b/i) || [])[1]) || 1));
     const ar = (String(text).match(/\b(16:9|9:16|1:1|4:3|3:4|3:2|2:3|21:9)\b/) || [])[1] || (/portrait|full body|t-?pose|standing/i.test(text) ? '2:3' : /landscape|wide|scene/i.test(text) ? '16:9' : '1:1');
@@ -183,11 +191,11 @@ function makeJob({ text, tool, mode, area, autonomy = 'draft', args = {}, repo, 
   const pj = project === '' ? null : PJ.card(project) || PJ.match(text);
   /* a private (work) project's context never goes to the cloud: those jobs move to the PC model */
   if (pj && pj.private && r.backend === 'claude') r = { ...r, backend: 'pc-model', runsOn: 'pc' };
-  const job = { text, area: area || (pj && pj.area), autonomy, args, repo: repo || (pj && pj.repo && pj.repo.includes('/') && !pj.repo.includes(' ') ? pj.repo : undefined), target, project: pj ? pj.id : null, thread: th ? th.id : undefined, ...(studioBody ? { studioBody } : {}), ...r };
-  const safe = ['brief', 'claude', 'link', 'copilot', 'doll'].includes(r.backend) || (r.backend === 'pc-model') || (tool === 'image' && ['model', 'realistic', 'anime', 'h3'].includes(r.mode));
+  const job = { text, area: area || (pj && pj.area), autonomy, args, repo: repo || (pj && pj.repo && pj.repo.includes('/') && !pj.repo.includes(' ') ? pj.repo : undefined), target, project: pj ? pj.id : null, thread: th ? th.id : undefined, ...(studioBody ? { studioBody } : {}), ...(sd ? { sd } : {}), ...r };
+  const safe = ['brief', 'claude', 'link', 'copilot', 'doll'].includes(r.backend) || (r.backend === 'pc-model') || (tool === 'image' && ['model', 'realistic', 'anime', 'manga', 'h3'].includes(r.mode));
   const mustAsk = r.gate === 'always' || SPENDS.includes(r.backend) || autonomy === 'ask' || (autonomy === 'draft' && !safe);
   const made = L.add({ ...job, status: mustAsk ? 'waiting' : 'ready' });
-  if (studioBody && ['realistic', 'anime'].includes(r.mode) && /realistic|photo/i.test(text) && /anime|manga|cel|toon/i.test(text) && !args.noTwin) {
+  if (sd && ['realistic', 'anime'].includes(r.mode) && /realistic|photo/i.test(text) && /anime|manga|cel|toon/i.test(text) && !args.noTwin) {
     const other = r.mode === 'realistic' ? 'anime' : 'realistic';
     const twin = makeJob({ text, tool, mode: other, area, autonomy, args: { ...args, noTwin: true }, repo, target, project, thread });
     L.update(made.id, { twin: twin.id }, `the ${other} version is job ${twin.id}`);
@@ -395,6 +403,7 @@ http.createServer(async (req, res) => {
       return send(res, 200, makeJob({ text: `${b.style || 'Realistic, detailed, natural lighting'}. Keep the same character, outfit, pose and framing. ${j.text}`, tool: 'image', mode: 'edit', area: j.area, autonomy: 'draft', args: { image_url: data }, project: j.project }));
     }
     if (p === '/api/studio/probe' && req.method === 'POST') { const j = L.add({ tool: 'image', mode: 'studio', backend: 'probe', runsOn: 'pc', label: 'Find Brenai Studio on the PC', text: 'Look for Brenai Studio on the usual local ports and list how its page talks to its server.', status: 'queued' }); if (!workerOnline()) PA.jumpstart(['worker']).catch(() => {}); return send(res, 200, j); }
+    if (p === '/api/engines/help' && req.method === 'POST') { const j = L.add({ tool: 'image', mode: 'studio', backend: 'engine-help', runsOn: 'pc', label: "Read the picture and movie engine's options", text: 'Run sd-cli --help and read the notes next to it, so the movie model can be wired up exactly. Changes nothing.', status: 'queued' }); return send(res, 200, j); }
     if (p === '/api/engines/find' && req.method === 'POST') { const j = L.add({ tool: 'image', mode: 'studio', backend: 'engines', runsOn: 'pc', label: 'Find the image and movie engines on the PC', text: 'Find how Brenai Studio runs its image and movie models (program, model files, command lines), so Brenebase can run them itself. Reads only.', status: 'queued' }); return send(res, 200, j); }
     if (p === '/api/studio/look' && req.method === 'POST') {
       /* read-only: Studio's settings, models, state, jobs, LLM status, and the code that builds its image request */
