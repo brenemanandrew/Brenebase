@@ -69,7 +69,7 @@ function wav16(f32, rate) {
 }
 /* project notes on this PC: only files inside these folders can be read (Google Drive for desktop, project folders) */
 const READ_ROOTS = (process.env.READ_ROOTS || 'G:\\My Drive;F:\\Projects;C:\\Program Files (x86)\\World of Warcraft\\_retail_\\Interface\\AddOns').split(';').map(r => path.resolve(r.trim())).filter(Boolean);
-can.push('read', 'readdir', 'probe');
+can.push('read', 'readdir', 'probe', 'studio');
 console.log(`hub worker: ${HUB}\ncan do: ${can.join(', ')}`);
 
 const run = (cmd, args, cwd, input, onOut) => new Promise(ok => {
@@ -158,8 +158,28 @@ async function doJob(j) { tail = []; await progress(j, 'started on the PC', '', 
         found.push(hit);
       }
     }
+    /* for the Studio page: its published API list if it has one, and the code around each /api/ call */
+    for (const f of found.filter(x => x.studio)) {
+      for (const doc of ['/openapi.json', '/api/openapi.json', '/docs/openapi.json']) {
+        try { const r = await fetch(f.url + doc, { signal: AbortSignal.timeout(2500) }); if (r.ok) { const o = await r.json(); f.openapi = Object.entries(o.paths || {}).map(([pth, ops]) => Object.entries(ops).map(([m, op]) => `${m.toUpperCase()} ${pth}${op.requestBody ? ' (body)' : ''}${op.summary ? ' : ' + op.summary : ''}`).join('; ')).slice(0, 80); break; } } catch { }
+      }
+      let code = ''; for (const sp of f.scripts) { try { code += '\n' + await (await fetch(new URL(sp, f.url + '/'), { signal: AbortSignal.timeout(3000) })).text(); } catch { } }
+      f.calls = [...code.matchAll(/(?:fetch|axios\.\w+|post|get|api)\s*\(([^;]{0,220})/gi)].map(m => m[1].replace(/\s+/g, ' ')).filter(x => /api/i.test(x)).slice(0, 40);
+      f.apiStrings = [...new Set([...code.matchAll(/['"`]\/api\/['"`]\s*\+\s*['"`]?([\w\/${}.-]+)|\/api\/([\w\/${}.-]+)/g)].map(m => '/api/' + (m[1] || m[2])))].slice(0, 60);
+    }
     const studio = found.filter(f => f.studio);
     return { ok: true, text: (studio.length ? 'Found Brenai Studio:\n' : 'Brenai Studio not found on the usual ports. Open it and tell Brenebase its address (STUDIO_PORT).\n') + JSON.stringify(studio.length ? studio : found, null, 1), result: { probe: found } };
+  }
+  /* requests to Brenai Studio on this PC only (STUDIO_URL, default http://127.0.0.1:7860) */
+  if (j.backend === 'studio') {
+    const base = (process.env.STUDIO_URL || 'http://127.0.0.1:7860').replace(/\/$/, '');
+    const calls = j.calls || [{ method: 'GET', path: '/openapi.json' }], out = [];
+    for (const c of calls.slice(0, 10)) {
+      if (!/^\/[\w\/.?=&%-]*$/.test(c.path || '')) { out.push({ path: c.path, error: 'bad path' }); continue; }
+      try { const r = await fetch(base + c.path, { method: c.method || 'GET', headers: c.body ? { 'content-type': 'application/json' } : {}, body: c.body ? JSON.stringify(c.body) : undefined, signal: AbortSignal.timeout(c.wait || 15000) }); const t = await r.text(); out.push({ path: c.path, status: r.status, body: t.slice(0, 4000) }); }
+      catch (e) { out.push({ path: c.path, error: String(e.message || e) }); }
+    }
+    return { ok: true, text: JSON.stringify(out, null, 1), result: { studio: out } };
   }
   if (j.backend === 'merge') return merge(j);
   if (j.backend === 'readdir') {

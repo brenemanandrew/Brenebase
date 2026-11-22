@@ -110,6 +110,7 @@ function report(j) {
     const rv = r.review; if (rv) R.tested.push(rv.verdict === 'ok' ? 'Claude Opus checked it: no changes needed.' : rv.verdict === 'fixed' ? `Claude Opus checked it and made ${rv.corrections.length} correction(s), listed below.` : rv.verdict === 'unreliable' ? 'Claude Opus judged it too wrong to use.' : rv.note); else R.notTested.push('Not checked by Claude Opus (simple, or the check is off).');
     R.next.push('Use it, or ask a follow-up in this tab.');
   } else if (j.backend === 'tts') { R.done.push('Read aloud.'); }
+  else if (j.backend === 'probe') { const st = (r.probe || []).filter(f => f.studio); if (st.length) { R.done.push(`Found Brenai Studio at ${st[0].url}.`); if (st[0].openapi) R.done.push(`It lists ${st[0].openapi.length} request types.`); R.next.push('Send me a screenshot of the Output below so I can wire image jobs to it.'); } else { R.blocked.push('Brenai Studio was not found on the usual ports.'); R.next.push('Open Brenai Studio and send me the address in its browser bar.'); } }
   else if (r.images && r.images.length) { R.done.push(`${r.images.length} picture(s) made.`); R.notTested.push('Look at them: a picture can only be judged by eye.'); if (r.restyle) R.next.push('Restyle realistic or anime with Meshy, or ask for a different pose.'); }
   else if (r.link) { R.done.push('Link ready.'); R.next.push('Open it.'); }
   else {
