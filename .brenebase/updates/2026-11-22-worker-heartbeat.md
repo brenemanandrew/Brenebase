@@ -13,6 +13,7 @@ title: Worker stays online during long jobs, runs jobs side by side
 - Time limits on the PC model call (5 min) and hub calls; the result is re-sent up to 5 times if the hub is briefly unreachable
 - PC tab Worker card shows what the worker is working on
 - Worker logs a line before its start-up checks, so a stuck start shows in Log
+- PC tab Worker card shows the worker's last log lines when it is offline, and short hashes of the worker and agent files on the PC
 
 ## Fixed
 - Worker showed offline while "running" on the PC (it was stuck inside a long job and stopped checking in)

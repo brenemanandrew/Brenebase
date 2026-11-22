@@ -87,7 +87,8 @@ async function status() {
   return {
     pc: os.hostname(), at: new Date().toISOString(), uptimeMin: Math.round(os.uptime() / 60),
     model: { name: MODEL, context: +CTX, server: m.server, loaded: m.loaded, lmsFound: fs.existsSync(LMS) },
-    helpers: Object.fromEntries(Object.entries(HELPERS).map(([k, h]) => [k, { label: h.label, setUp: !!h.file && fs.existsSync(h.file), running: !!running[k] && running[k].exitCode === null }])),
+    helpers: Object.fromEntries(Object.entries(HELPERS).map(([k, h]) => [k, { label: h.label, setUp: !!h.file && fs.existsSync(h.file), running: !!running[k] && running[k].exitCode === null, log: (running[k] && running[k].log || []).slice(-8) }])),
+    files: Object.fromEntries(['worker/hub-worker.mjs', 'pc/brenebase-agent.mjs'].map(f => { try { return [f, crypto.createHash('sha1').update(fs.readFileSync(path.join(BASE, f))).digest('hex').slice(0, 7)]; } catch { return [f, 'missing']; } })),
   };
 }
 
