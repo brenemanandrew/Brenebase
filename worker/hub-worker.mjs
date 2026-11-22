@@ -232,10 +232,23 @@ async function doJob(j) { await progress(j, 'started on the PC', '', true);
     if (missing.length) { await progress(j, `installing ${missing.join(', ')} for the tool`, '', true); const npm = path.join(path.dirname(process.execPath), process.platform === 'win32' ? 'npm.cmd' : 'npm'); const ni = await run(fs.existsSync(npm) ? npm : 'npm', ['install', '--no-save', '--no-package-lock', ...missing], t.dir, null, x => progress(j, 'installing', x)); if (ni.code) return { ok: false, error: `Could not install ${missing.join(', ')}: ${(ni.err || ni.out).slice(-300)}` }; }
     /* folders a tool reads from: made if missing; nothing in them means nothing to do (said plainly, not a crash) */
     for (const d of spec.dirs || []) fs.mkdirSync(d, { recursive: true });
-    if (spec.inDir && spec.inExt && !fs.readdirSync(spec.inDir).some(f => spec.inExt.test(f))) return { ok: false, error: `Nothing to convert: put your ${spec.inLabel || 'files'} in ${spec.inDir}, then tap Retry.` };
+    /* nothing in the in folder: look for the files in the usual places on this PC and copy them in (copies: the originals stay where they are) */
+    let gathered = [];
+    if (spec.inDir && spec.inExt && !fs.readdirSync(spec.inDir).some(f => spec.inExt.test(f))) {
+      await progress(j, `looking for ${spec.inLabel || 'files'} on this PC`, '', true);
+      const H = os.homedir(), roots = [path.join(H, 'Downloads'), path.join(H, 'Desktop'), path.join(H, 'Documents'), path.join(H, 'OneDrive', 'Desktop'), path.join(H, 'OneDrive', 'Documents'), ...(process.env.PROJECT_ROOTS || 'F:\\Projects').split(';'), 'F:\\AI', 'F:\\Mixamo', 'F:\\Animations', 'D:\\Mixamo'];
+      const seen = new Set(), skip = /^(node_modules|\.git|AppData|\$recycle\.bin|.*-wt|clips-out|Library)$/i; let looked = 0;
+      const walk = (d, depth) => { if (depth < 0 || looked > 40000 || gathered.length >= 300) return; let es; try { es = fs.readdirSync(d, { withFileTypes: true }); } catch { return; } looked += es.length;
+        for (const e of es) { const f = path.join(d, e.name); if (e.isDirectory()) { if (!skip.test(e.name) && path.resolve(f) !== path.resolve(spec.inDir)) walk(f, depth - 1); } else if (spec.inExt.test(e.name) && !seen.has(e.name.toLowerCase())) { seen.add(e.name.toLowerCase()); gathered.push(f); } } };
+      for (const r of [...new Set(roots)]) if (fs.existsSync(r)) walk(r, 6);
+      if (!gathered.length) return { ok: false, error: `Nothing to convert: no ${spec.inLabel || 'files'} found in ${spec.inDir} or the usual folders (Downloads, Desktop, Documents, F:\\Projects, F:\\AI). Put them in ${spec.inDir}, then tap Retry.` };
+      for (const f of gathered) { try { fs.copyFileSync(f, path.join(spec.inDir, path.basename(f))); } catch { } }
+      await progress(j, `copied ${gathered.length} file(s) into ${spec.inDir}`, gathered.slice(0, 20).join('\n'), true);
+    }
     await progress(j, `running ${spec.script}`, '', true);
     const r = await run(process.execPath, [script, ...spec.args], path.dirname(script), null, x => progress(j, 'running', x));
-    return { ok: r.code === 0, text: r.out || r.err, error: r.code ? (r.err || r.out).slice(-1500) : undefined };
+    const found = gathered.length ? `Found and copied ${gathered.length} file(s) into ${spec.inDir} (the originals were left where they were):\n${gathered.slice(0, 40).map(f => '- ' + f).join('\n')}\n\n` : '';
+    return { ok: r.code === 0, text: found + (r.out || r.err), error: r.code ? (r.err || r.out).slice(-1500) : undefined };
   }
   if (j.backend === 'tts') {
     const t = await voice(); const v = t.voices[j.voice] ? j.voice : 'af_heart', speed = Math.max(0.6, Math.min(1.6, Number(j.speed) || 1));
