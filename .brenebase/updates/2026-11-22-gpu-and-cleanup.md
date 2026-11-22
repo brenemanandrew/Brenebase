@@ -26,3 +26,6 @@ title: Pictures and the companion share the graphics card; cleanup pass
 
 ## Tested
 - Headless Chromium on an emulated Pixel 7: every tab drawn, screenshots looked at, no page errors; node test.mjs 61/61
+
+## Fixed
+- "Cannot find module F:\Projects\Brenelandtest\brenai\tools\clipconv.mjs": PC scripts ran from Andrew's own working copy, which can be behind or on another branch, and the clip converter needs the three package that nothing installed. PC scripts now run from the worker's own copy of the repo's latest main (<repo>-wt\_tools, detached, refreshed each run), and missing packages the script needs are installed there with --no-save. His working copy is never touched. Tested: a fresh copy on another branch stayed on it; the tools copy was made, three installed, the converter ran

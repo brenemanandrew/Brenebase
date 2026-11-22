@@ -33,8 +33,9 @@ if (!TOKEN) { console.log('Set HUB_WORKER_TOKEN first.'); process.exit(1); }
 
 /* named scripts the hub may ask for. Nothing outside this list runs. */
 const PC_SCRIPTS = {
-  'make3d:check': j => [process.execPath, [path.join(REPOS, 'Brenelandtest/pipeline/jstest/piece.mjs'), j.args.piece || '']],
-  'motion:library': j => [process.execPath, [path.join(REPOS, 'Brenelandtest/brenai/tools/clipconv.mjs'), j.args.in || path.join(REPOS, 'clips-in'), j.args.out || path.join(REPOS, 'clips-out')]],
+  /* scripts from a repo run from the worker's own copy of its latest main (see toolsTree), with the packages they need */
+  'make3d:check': j => ({ repo: 'Brenelandtest', script: 'pipeline/jstest/piece.mjs', args: [j.args.piece || ''] }),
+  'motion:library': j => ({ repo: 'Brenelandtest', script: 'brenai/tools/clipconv.mjs', needs: ['three'], args: [j.args.in || path.join(REPOS, 'clips-in'), j.args.out || path.join(REPOS, 'clips-out')] }),
   'ship:test': j => ['npx', ['serve', path.join(REPOS, j.args.site || 'Brenelandtest/site')]],
 };
 
@@ -103,6 +104,19 @@ async function progress(j, step, text, force) {
 }
 /* where a repo lives on this PC: REPOS, or F:\Projects (where Breneland-Next is), else REPOS for a new clone */
 function repoDir(r) { const name = String(r || 'brenemanandrew/Brenelandtest').split('/').pop(); for (const root of [REPOS, ...(process.env.PROJECT_ROOTS || 'F:\\Projects').split(';')]) { const d = path.join(root, name); if (fs.existsSync(path.join(d, '.git'))) return d; } return path.join(REPOS, name); }
+/* the worker's own copy of a repo's latest main, only for running its tools: <repo>-wt\_tools, detached, refreshed each run.
+   Your own working copy (which may be on another branch, or behind) is never touched. */
+async function toolsTree(name, j) {
+  let repo = repoDir(name);
+  if (!fs.existsSync(path.join(repo, '.git'))) { await progress(j, `cloning ${name}`, '', true); fs.mkdirSync(path.dirname(repo), { recursive: true }); const c = await run('git', ['clone', `https://github.com/brenemanandrew/${name}.git`, repo], path.dirname(repo)); if (c.code) return { error: `Could not clone ${name}: ${(c.err || c.out).slice(-300)}` }; }
+  await progress(j, `getting the latest ${name}`, '', true);
+  await run('git', ['fetch', 'origin'], repo);
+  const head = (await run('git', ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], repo)).out.trim() || 'origin/main';
+  const dir = path.join(`${repo}-wt`, '_tools');
+  if (!fs.existsSync(path.join(dir, '.git'))) { fs.mkdirSync(path.dirname(dir), { recursive: true }); const w = await run('git', ['worktree', 'add', '--detach', dir, head], repo); if (w.code || !fs.existsSync(dir)) return { error: `Could not make the tools copy at ${dir}: ${(w.err || w.out).slice(-300)}` }; }
+  else { const c = await run('git', ['checkout', '--detach', '-f', head], dir); if (c.code) return { error: `Could not update the tools copy at ${dir}: ${(c.err || c.out).slice(-300)}` }; }
+  return { dir };
+}
 async function worktree(repo, branch, key, j) {
   const dir = path.join(`${repo}-wt`, String(key));
   if (fs.existsSync(path.join(dir, '.git'))) { await progress(j, `reusing worktree ${dir}`, '', true); const b = await run('git', ['rev-parse', 'HEAD'], dir); return { dir, base: b.out.trim() }; }
@@ -208,8 +222,17 @@ async function doJob(j) { await progress(j, 'started on the PC', '', true);
   }
   if (j.backend === 'pc-run') {
     const f = PC_SCRIPTS[`${j.tool}:${j.mode}`]; if (!f) return { ok: false, error: `No PC script for ${j.tool}:${j.mode}` };
-    const [cmd, args] = f(j); const r = await run(cmd, args, REPOS);
-    return { ok: r.code === 0, text: r.out || r.err, error: r.code ? r.err : undefined };
+    const spec = f(j);
+    if (Array.isArray(spec)) { const [cmd, args] = spec; const r = await run(cmd, args, REPOS); return { ok: r.code === 0, text: r.out || r.err, error: r.code ? r.err : undefined }; }
+    const t = await toolsTree(spec.repo, j); if (t.error) return { ok: false, error: t.error };
+    const script = path.join(t.dir, spec.script);
+    if (!fs.existsSync(script)) return { ok: false, error: `${spec.script} is not in ${spec.repo}'s main branch any more.` };
+    /* packages the script needs that are not installed: installed into the worker's copy only (never your working copy) */
+    const missing = (spec.needs || []).filter(pkg => { for (let d = path.dirname(script); d.startsWith(t.dir); d = path.dirname(d)) { if (fs.existsSync(path.join(d, 'node_modules', pkg))) return false; if (d === t.dir) break; } return true; });
+    if (missing.length) { await progress(j, `installing ${missing.join(', ')} for the tool`, '', true); const npm = path.join(path.dirname(process.execPath), process.platform === 'win32' ? 'npm.cmd' : 'npm'); const ni = await run(fs.existsSync(npm) ? npm : 'npm', ['install', '--no-save', '--no-package-lock', ...missing], t.dir, null, x => progress(j, 'installing', x)); if (ni.code) return { ok: false, error: `Could not install ${missing.join(', ')}: ${(ni.err || ni.out).slice(-300)}` }; }
+    await progress(j, `running ${spec.script}`, '', true);
+    const r = await run(process.execPath, [script, ...spec.args], path.dirname(script), null, x => progress(j, 'running', x));
+    return { ok: r.code === 0, text: r.out || r.err, error: r.code ? (r.err || r.out).slice(-1500) : undefined };
   }
   if (j.backend === 'tts') {
     const t = await voice(); const v = t.voices[j.voice] ? j.voice : 'af_heart', speed = Math.max(0.6, Math.min(1.6, Number(j.speed) || 1));
