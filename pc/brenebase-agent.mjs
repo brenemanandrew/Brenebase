@@ -94,6 +94,7 @@ async function status() {
 async function act(action) {
   const [verb, name] = String(action || '').split(':');
   if (verb === 'status') return { ok: true, status: await status() };
+  if (verb === 'update') { await selfUpdate(); return { ok: true, note: 'Checked Brenebase for newer files; anything new was downloaded and restarted.', status: await status() }; }
   if (verb === 'model-start') {
     if (!fs.existsSync(LMS)) return { ok: false, note: `lms not found at ${LMS}` };
     const a = await run(LMS, ['unload', '--all']);
