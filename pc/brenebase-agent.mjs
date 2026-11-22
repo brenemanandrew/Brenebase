@@ -111,12 +111,17 @@ async function act(action) {
   /* a picture-reading (vision) model for LM Studio, so pictures sent to the companion can be read on this PC. Downloads in the background. */
   if (verb === 'vision-get') {
     if (!fs.existsSync(LMS)) return { ok: false, note: `lms not found at ${LMS}` };
-    if (running.vision && running.vision.exitCode === null && !running.vision.ended) return { ok: true, note: 'Already downloading. Tap Vision log to see how far.' };
-    const want = process.env.VISION_GET || 'qwen2.5-vl-7b';
-    const p = spawn(LMS, ['get', want, '-y'], { windowsHide: true }); p.log = [];
-    const keep = d => { p.log.push(...String(d).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').split(/[\r\n]+/).filter(x => x.trim())); p.log = p.log.slice(-40); };
-    p.stdout.on('data', keep); p.stderr.on('data', keep); p.on('exit', c => { p.ended = true; keep(`(finished, code ${c})`); }); p.on('error', e => { p.ended = true; keep(String(e.message)); });
-    running.vision = p; return { ok: true, note: `Downloading ${want} with LM Studio (several GB). Tap Vision log to see how far. When it finishes, pictures are read on this PC.` };
+    if (running.vision && !running.vision.ended) return { ok: true, note: 'Already downloading. Tap Vision log to see how far.' };
+    /* "lms get <name>" only searches LM Studio's staff picks; a full Hugging Face address always works. Tried in order until one downloads. */
+    const tries = (process.env.VISION_GET ? [process.env.VISION_GET] : []).concat(['https://huggingface.co/lmstudio-community/Qwen2.5-VL-7B-Instruct-GGUF', 'lmstudio-community/Qwen2.5-VL-7B-Instruct-GGUF', 'https://huggingface.co/lmstudio-community/gemma-3-12b-it-GGUF']);
+    const holder = { log: [], exitCode: null }; running.vision = holder;
+    const keep = d => { holder.log.push(...String(d).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').split(/[\r\n]+/).filter(x => x.trim())); holder.log = holder.log.slice(-40); };
+    const next = i => { if (i >= tries.length) { holder.ended = true; holder.exitCode = 1; keep('(none of the downloads worked; send this log to Claude)'); return; }
+      keep(`--- trying ${tries[i]}`); const p = spawn(LMS, ['get', tries[i], '-y'], { windowsHide: true });
+      p.stdout.on('data', keep); p.stderr.on('data', keep); p.on('error', e => { keep(String(e.message)); next(i + 1); });
+      p.on('exit', c => { if (c === 0) { holder.ended = true; holder.exitCode = 0; keep('(finished: the picture reader is installed; LM Studio loads it when a picture comes in)'); } else next(i + 1); }); };
+    next(0);
+    return { ok: true, note: `Downloading a picture reader with LM Studio (several GB): ${tries[0]}. Tap Vision log to see how far.` };
   }
   if (verb === 'logs' && name === 'vision') return { ok: true, note: (running.vision && running.vision.log || []).join('\n') || 'nothing yet' };
   if (verb === 'model-stop') { await run(LMS, ['unload', '--all']); const r = await run(LMS, ['server', 'stop']); return { ok: true, note: r.out.trim(), status: await status() }; }
