@@ -13,6 +13,7 @@ const cur = () => db.convos.find(c => c.id === db.current) || db.convos[0];
 const save = () => { fs.mkdirSync(path.dirname(FILE), { recursive: true }); fs.writeFileSync(FILE, JSON.stringify(db, null, 1)); };
 
 export const MODES = ['chat', 'vent', 'roleplay', 'coach'];
+export const LOOKS = { hairStyle: ['long', 'wavy', 'bob', 'ponytail', 'twintails', 'bun', 'pixie'], topStyle: ['hoodie', 'tee', 'tank', 'sweater', 'blouse', 'crop', 'dress'], bottomStyle: ['jeans', 'leggings', 'skirt', 'shorts'], shoeStyle: ['boots', 'sneakers', 'flats'] };
 export function state(n = 80) { const c = cur(); return { setup: db.setup, convos: db.convos.filter(x => !x.closed).map(x => ({ id: x.id, name: x.name })), current: c.id, history: c.history.slice(-n) }; }
 export function convo({ id, name, close }) {
   if (close) { const c = db.convos.find(x => x.id === id); if (c && db.convos.filter(x => !x.closed).length > 1) { c.closed = Date.now(); if (db.current === id) db.current = db.convos.find(x => !x.closed).id; } }
@@ -22,8 +23,14 @@ export function convo({ id, name, close }) {
 }
 export function setup(s) {
   const hex = v => /^#[0-9a-f]{6}$/i.test(v || '') ? v : undefined;
-  const look = {}; for (const k of ['skin', 'hair', 'iris', 'top', 'shirt', 'bg1', 'bg2', 'lip']) { const v = hex(s.look && s.look[k]); if (v) look[k] = v; }
-  db.setup = { name: String(s.name || 'Companion').slice(0, 40), about: String(s.about || '').slice(0, 2000), voice: /^[a-z]{2}_[a-z]+$/.test(s.voice || '') ? s.voice : 'af_heart', speak: !!s.speak, look, at: Date.now() };
+  const look = {}; for (const k of ['skin', 'hair', 'iris', 'top', 'shirt', 'bottom', 'shoes', 'bg1', 'bg2', 'lip']) { const v = hex(s.look && s.look[k]); if (v) look[k] = v; }
+  /* styles and body shape; always dressed, so only these choices exist */
+  const pick = (k, list) => { const v = s.look && s.look[k]; if (list.includes(v)) look[k] = v; };
+  pick('hairStyle', LOOKS.hairStyle); pick('topStyle', LOOKS.topStyle); pick('bottomStyle', LOOKS.bottomStyle); pick('shoeStyle', LOOKS.shoeStyle);
+  for (const k of ['shoulders', 'bust', 'waist', 'hips', 'legs', 'bounce']) { const v = s.look && +s.look[k]; if (Number.isFinite(v)) look[k] = Math.max(0, Math.min(1, v)); }
+  if (s.look && s.look.glasses != null) look.glasses = !!s.look.glasses;
+  const imageReader = ['pc', 'claude'].includes(s.imageReader) ? s.imageReader : (db.setup && db.setup.imageReader) || 'pc';
+  db.setup = { name: String(s.name || 'Companion').slice(0, 40), about: String(s.about || '').slice(0, 2000), voice: /^[a-z]{2}_[a-z]+$/.test(s.voice || '') ? s.voice : 'af_heart', speak: !!s.speak, look, imageReader, at: Date.now() };
   save(); return db.setup;
 }
 export function add(who, text, extra = {}) { const c = (extra.convo && db.convos.find(x => x.id === extra.convo)) || cur(); c.history.push({ who, text: String(text).slice(0, 8000), at: Date.now(), ...extra }); c.history = c.history.slice(-400); save(); }
@@ -33,9 +40,11 @@ export function clear() { cur().history = []; save(); }
 export function request(mode) {
   const s = db.setup || { name: 'Companion', about: '' };
   const system = [`You are ${s.name}, Andrew's companion. ${s.about}`.trim(), PROMPTS.companion[mode] || PROMPTS.companion.chat, 'Talk like a person in a chat: short replies, no lists, no headings. Actions go in *asterisks*. Never use em dashes.'].join('\n\n');
-  const messages = cur().history.filter(m => m.who !== 'note').slice(-24).map(m => ({ role: m.who === 'me' ? 'user' : 'assistant', content: m.text }));
+  const messages = cur().history.filter(m => m.who !== 'note').slice(-24).map(m => ({ role: m.who === 'me' ? 'user' : 'assistant', content: m.text + (m.image ? (m.seen ? `\n\n[Andrew sent a picture. What it shows: ${m.seen}]` : '\n\n[Andrew sent a picture.]') : '') }));
   return { system, messages };
 }
+/* what a picture he sent shows, once something has read it */
+export function seen(picId, text) { for (const c of db.convos) for (const m of c.history) if (m.pic === picId) { m.seen = String(text || '').slice(0, 2000); save(); return true; } return false; }
 
 /* the Results conversation: where job results are talked over (the chat window that pops up with results) */
 export function ensure(id, name) { if (!db.convos.some(c => c.id === id)) { db.convos.push({ id, name, history: [] }); save(); } return db.convos.find(c => c.id === id); }

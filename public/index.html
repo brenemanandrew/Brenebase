@@ -26,6 +26,10 @@ select{background:var(--card);color:var(--text);border:1px solid var(--line);bor
 pre{white-space:pre-wrap;word-break:break-word;background:#0f1116;border-radius:8px;padding:10px;font-size:13px;max-height:340px;overflow:auto}
 h3{margin:18px 0 6px}.mode{margin:4px 0 4px 10px}
 #login{display:none}
+.icons{display:flex;gap:6px;margin:6px 0}.icons button{width:38px;height:38px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--text);font-size:17px;display:flex;align-items:center;justify-content:center;padding:0}.icons button.on{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc) inset}
+.pills{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}.pills button{border-radius:999px;border:1px solid var(--line);background:none;color:var(--dim);padding:5px 12px;font:inherit;font-size:14px}.pills button.on{border-color:var(--acc);color:var(--acc);background:#1b2740}
+.ed h4{margin:12px 0 4px;font-size:14px;color:var(--dim);font-weight:600}.ed .sl{display:flex;align-items:center;gap:8px;margin:4px 0;font-size:14px}.ed .sl span{width:78px;color:var(--dim)}.ed .sl input{flex:1}.ed .cols{display:flex;gap:10px;flex-wrap:wrap}.ed .cols label{display:flex;flex-direction:column;align-items:center;font-size:12px;color:var(--dim)}.ed input[type=color]{width:38px;height:30px;border:0;background:none;padding:0}
+.ed input[type=text],.ed textarea,.ed select{width:100%}
 #now{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px}#now .chip{border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-size:13px;cursor:pointer;color:var(--dim)}#now .chip.bad{color:var(--bad);border-color:var(--bad)}#now .chip.run{color:var(--acc);border-color:var(--acc)}
 .bigrow{display:flex;gap:8px;margin:10px 0}.bigrow button{flex:1;padding:14px;font-size:16px}
 .ppart{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:8px 0}.ppart textarea{min-height:60px;margin-top:6px;font-size:14px}.ppart select{max-width:100%}
@@ -77,30 +81,34 @@ h3{margin:18px 0 6px}.mode{margin:4px 0 4px 10px}
 <section id="projects" style="display:none"><div class="row"><button class="sm" id="syncBtn">Update notes now</button><span id="syncMsg" class="dim"></span></div><div id="projList"></div></section>
 <section id="companion" style="display:none">
   <div id="cpSetup" class="card" style="display:none">
-    <b id="cpSetupTitle">Set up your companion</b>
-    <div class="dim">First time only. You can change it any time with Edit look.</div>
-    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px">
-      <div id="cpPreview" style="width:150px;height:150px;border-radius:14px;overflow:hidden;flex:none"></div>
-      <div style="flex:1;min-width:170px">
-        <input id="cpName" placeholder="Name" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--line);background:#0f1116;color:var(--text);margin-bottom:6px">
-        <div class="row" id="cpColors" style="margin:4px 0"></div>
-      </div>
+    <div class="row" style="margin:0"><b id="cpSetupTitle" style="flex:1">Set up your companion</b><button class="sm" id="cpCancel" style="display:none">Cancel</button><button class="go" id="cpSave">Save</button></div>
+    <div class="dim">Changes show on her right away. Nothing is kept until you tap Save.</div>
+    <div style="display:flex;gap:12px;margin-top:8px;align-items:flex-start">
+      <div id="cpPreview" style="width:38%;max-width:200px;aspect-ratio:200/480;border-radius:14px;overflow:hidden;flex:none;position:sticky;top:110px"></div>
+      <div style="flex:1;min-width:0" id="cpEditor"></div>
     </div>
-    <textarea id="cpAbout" placeholder="Who they are, how they talk, anything they should know about you (optional)" style="min-height:70px;margin-top:8px"></textarea>
-    <div class="row"><select id="cpVoice"></select><label class="dim"><input type="checkbox" id="cpSpeak"> read replies aloud</label></div>
-    <div class="row"><button class="go" id="cpSave">Save</button><button class="sm" id="cpCancel" style="display:none">Cancel</button></div>
   </div>
   <div id="cpChat" style="display:none">
-    <div style="display:flex;gap:10px;align-items:flex-end">
-      <div id="cpStage" style="width:42%;max-width:220px;aspect-ratio:1;border-radius:16px;overflow:hidden;flex:none"></div>
-      <div style="flex:1"><b id="cpWho"></b><div class="dim" id="cpStatus"></div>
-        <div class="row" id="cpModes" style="margin:6px 0"></div>
-        <div class="row"><button class="sm" id="cpEdit">Edit look</button><button class="sm" id="cpClear">Clear this one</button></div></div>
+    <div style="display:flex;gap:10px;align-items:flex-start">
+      <div id="cpStageBox" style="width:38%;max-width:200px;flex:none"><div id="cpStage" title="Tap to see all of her" style="width:100%;aspect-ratio:1;border-radius:16px;overflow:hidden;cursor:zoom-in"></div></div>
+      <div style="flex:1;min-width:0"><b id="cpWho"></b><div class="dim" id="cpStatus"></div>
+        <div class="icons" id="cpIcons">
+          <button id="cpEdit" title="Edit her look">&#9999;&#65039;</button><button id="cpVoiceT" title="Read her replies aloud"></button><button id="cpPicBtn" title="Send her a picture">&#128444;&#65039;</button><button id="cpFullBtn" title="See all of her">&#9974;</button><button id="cpClear" title="Clear this conversation">&#128465;&#65039;</button>
+        </div>
+        <div class="pills" id="cpModes"></div></div>
     </div>
     <div id="cpConvos" style="display:flex;gap:6px;overflow-x:auto;margin:10px 0 0"></div>
     <div id="cpLog" style="max-height:46vh;overflow:auto;margin:10px 0"></div>
+    <div id="cpPicPrev"></div>
     <textarea id="cpIn" placeholder="Say it." style="min-height:70px"></textarea>
     <div class="row"><button class="go" id="cpMic" style="background:var(--card);color:var(--text);border:1px solid var(--line)">&#127908; Talk</button><button class="go" id="cpSend">Send</button></div>
+    <input type="file" id="cpFile" accept="image/*" style="display:none">
+  </div>
+  <div id="cpFull" style="display:none;position:fixed;inset:0;z-index:50;background:#0b0c10;flex-direction:column">
+    <div style="display:flex;align-items:center;gap:8px;padding:10px 12px"><b id="cpFullName" style="flex:1"></b><div class="icons" style="margin:0"><button id="cpFullEdit" title="Edit her look">&#9999;&#65039;</button><button id="cpFullX" title="Close">&#10005;</button></div></div>
+    <div id="cpFullStage" style="flex:1;min-height:0;display:flex;justify-content:center"></div>
+    <div id="cpFullSay" class="dim" style="padding:6px 14px;max-height:22vh;overflow:auto;white-space:pre-wrap"></div>
+    <div style="display:flex;gap:6px;padding:8px 10px 14px"><input id="cpFullIn" placeholder="Say it." style="flex:1;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--text)"><button class="go" id="cpFullSend">Send</button></div>
   </div>
 </section>
 <section id="pc" style="display:none"><div id="pcBox"></div></section>
@@ -291,39 +299,74 @@ $('micBtn').onclick = () => { if (listening && micTarget === 'thought') return m
 if (!SR) $('micBtn').title = 'Talk to text needs Chrome, Edge or Safari';
 
 /* ---- companion: his own chat partner on the PC model, with the avatar he set up (Brenai's cartoon puppet) ---- */
-const CP_COLORS = [['skin', 'Skin', '#f4ecef'], ['hair', 'Hair', '#0b0b10'], ['iris', 'Eyes', '#3b2f4f'], ['top', 'Top', '#2a2234'], ['shirt', 'Shirt', '#e6dbe0'], ['bg1', 'Light', '#8a5bb8'], ['bg2', 'Shadow', '#2a1b4d']];
+const CP_COLORS = [['skin', 'Skin', '#f4ecef'], ['hair', 'Hair', '#0b0b10'], ['iris', 'Eyes', '#3b2f4f'], ['lip', 'Lips', '#4a1f3a'], ['top', 'Top', '#2a2234'], ['shirt', 'Inner', '#e6dbe0'], ['bottom', 'Bottom', '#2b3550'], ['shoes', 'Shoes', '#1c1a22'], ['bg1', 'Light', '#8a5bb8'], ['bg2', 'Shadow', '#2a1b4d']];
+const CP_STYLES = { hairStyle: [['long', 'Long'], ['wavy', 'Wavy'], ['bob', 'Bob'], ['ponytail', 'Ponytail'], ['twintails', 'Twin tails'], ['bun', 'Bun'], ['pixie', 'Pixie']], topStyle: [['hoodie', 'Hoodie'], ['tee', 'Tee'], ['tank', 'Tank'], ['sweater', 'Sweater'], ['blouse', 'Blouse'], ['crop', 'Crop top'], ['dress', 'Dress']], bottomStyle: [['jeans', 'Jeans'], ['leggings', 'Leggings'], ['skirt', 'Skirt'], ['shorts', 'Shorts']], shoeStyle: [['boots', 'Boots'], ['sneakers', 'Sneakers'], ['flats', 'Flats']] };
+const CP_SHAPE = [['shoulders', 'Shoulders'], ['bust', 'Bust'], ['waist', 'Waist'], ['hips', 'Hips'], ['legs', 'Legs'], ['bounce', 'Bounce']];
 const CP_MODES = [['chat', 'Just talk'], ['vent', 'Vent'], ['roleplay', 'Roleplay'], ['coach', 'Coach']];
 const CP_VOICES = ['af_heart', 'af_bella', 'af_nicole', 'af_sarah', 'af_sky', 'af_nova', 'af_river', 'af_jessica', 'af_kore', 'af_aoede', 'am_michael', 'am_fenrir', 'am_puck', 'am_echo', 'am_eric', 'am_liam', 'am_onyx', 'am_adam', 'bf_emma', 'bf_isabella', 'bf_lily', 'bm_george', 'bm_fable', 'bm_lewis', 'bm_daniel'];
-let CP = null, cpAv = null, cpMode = localStorage.getItem('cpMode') || 'chat', cpSeen = 0, cpTimer = 0;
-function cpLoadAvatar(look, el) { return new Promise(ok => { window.COMPANION_LOOK = look || {}; const go = () => ok(window.CompanionAvatar.mount(el)); if (window.CompanionAvatar) return go(); const sc = document.createElement('script'); sc.src = '/companion-avatar.js'; sc.onload = go; document.head.appendChild(sc); }); }
-function cpLook() { const l = {}; for (const [k] of CP_COLORS) l[k] = $('cp_' + k).value; return l; }
+let CP = null, cpAv = null, cpMode = localStorage.getItem('cpMode') || 'chat', cpSeen = 0, cpTimer = 0, cpDraft = null, cpPic = null;
+function cpLoadAvatar(look, el, view) { return new Promise(ok => { window.COMPANION_LOOK = look || {}; const go = () => { const av = window.CompanionAvatar.mount(el, { onPortraitTap: () => cpFullOpen() }); if (view) av.view(view); ok(av); }; if (window.CompanionAvatar) return go(); const sc = document.createElement('script'); sc.src = '/companion-avatar.js?v=2'; sc.onload = go; document.head.appendChild(sc); }); }
+/* the look editor: every change redraws the preview; Save keeps it */
 async function cpSetupView(editing) {
-  $('cpChat').style.display = 'none'; $('cpSetup').style.display = ''; $('cpCancel').style.display = editing ? '' : 'none'; $('cpStage').textContent = ''; cpAv = null;
-  const S = (CP && CP.setup) || {}; const L = S.look || {};
+  cpFullClose(); $('cpChat').style.display = 'none'; $('cpSetup').style.display = ''; $('cpCancel').style.display = editing ? '' : 'none'; $('cpStage').textContent = ''; cpAv = null;
+  const S = (CP && CP.setup) || {};
+  cpDraft = { name: S.name || '', about: S.about || '', voice: S.voice || 'af_heart', speak: !!S.speak, imageReader: S.imageReader || 'pc', look: Object.assign({ hairStyle: 'long', topStyle: 'hoodie', bottomStyle: 'jeans', shoeStyle: 'boots', glasses: false, shoulders: 0.5, bust: 0.5, waist: 0.5, hips: 0.5, legs: 0.5, bounce: 0.5 }, Object.fromEntries(CP_COLORS.map(([k, , d]) => [k, d])), S.look || {}) };
   $('cpSetupTitle').textContent = editing ? 'Edit your companion' : 'Set up your companion';
-  $('cpName').value = S.name || ''; $('cpAbout').value = S.about || ''; $('cpSpeak').checked = !!S.speak;
-  $('cpVoice').innerHTML = CP_VOICES.map(v => `<option${(S.voice || 'af_heart') === v ? ' selected' : ''}>${v}</option>`).join('');
-  $('cpColors').innerHTML = CP_COLORS.map(([k, n, d]) => `<label class="dim" style="display:flex;flex-direction:column;align-items:center;font-size:12px"><input type="color" id="cp_${k}" value="${L[k] || d}" style="width:38px;height:30px;border:0;background:none">${n}</label>`).join('');
-  const redraw = () => cpLoadAvatar(cpLook(), $('cpPreview'));
-  for (const [k] of CP_COLORS) $('cp_' + k).oninput = redraw;
+  const L = cpDraft.look;
+  const pills = k => `<div class="pills">${CP_STYLES[k].map(([v, n]) => `<button data-k="${k}" data-v="${v}" class="${L[k] === v ? 'on' : ''}">${n}</button>`).join('')}</div>`;
+  const col = k => { const c = CP_COLORS.find(x => x[0] === k); return `<label><input type="color" data-c="${k}" value="${L[k]}">${c[1]}</label>`; };
+  $('cpEditor').innerHTML = `<div class="ed">
+    <input type="text" id="cpName" placeholder="Name" value="${esc(cpDraft.name)}" style="padding:8px;border-radius:8px;border:1px solid var(--line);background:#0f1116;color:var(--text)">
+    <h4>Hair</h4>${pills('hairStyle')}<div class="cols">${col('hair')}</div>
+    <h4>Top</h4>${pills('topStyle')}<div class="cols">${col('top')}${col('shirt')}</div>
+    <h4>Bottom</h4>${pills('bottomStyle')}<div class="cols">${col('bottom')}</div>
+    <h4>Shoes</h4>${pills('shoeStyle')}<div class="cols">${col('shoes')}</div>
+    <h4>Body</h4>${CP_SHAPE.map(([k, n]) => `<div class="sl"><span>${n}</span><input type="range" min="0" max="1" step="0.05" data-s="${k}" value="${L[k]}"></div>`).join('')}
+    <h4>Face</h4><div class="cols">${col('skin')}${col('iris')}${col('lip')}</div><div class="pills"><button data-g="1" class="${L.glasses ? 'on' : ''}">Glasses</button></div>
+    <h4>Background</h4><div class="cols">${col('bg1')}${col('bg2')}</div>
+    <h4>Who she is</h4><textarea id="cpAbout" placeholder="Who she is, how she talks, anything she should know about you (optional)" style="min-height:70px">${esc(cpDraft.about)}</textarea>
+    <h4>Voice</h4><div class="row" style="margin:4px 0"><select id="cpVoice">${CP_VOICES.map(v => `<option${cpDraft.voice === v ? ' selected' : ''}>${v}</option>`).join('')}</select><label class="dim"><input type="checkbox" id="cpSpeak"${cpDraft.speak ? ' checked' : ''}> read replies aloud</label></div>
+    <h4>Pictures you send her</h4><select id="cpReader"><option value="pc"${cpDraft.imageReader === 'pc' ? ' selected' : ''}>Read on your PC (needs a vision model in LM Studio)</option><option value="claude"${cpDraft.imageReader === 'claude' ? ' selected' : ''}>Read by Claude (the picture goes to Claude)</option></select>
+  </div>`;
+  const E = $('cpEditor'), redraw = () => { $('cpPreview').textContent = ''; cpLoadAvatar(cpDraft.look, $('cpPreview'), 'full'); };
+  E.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { L[b.dataset.k] = b.dataset.v; E.querySelectorAll(`[data-k="${b.dataset.k}"]`).forEach(x => x.classList.toggle('on', x === b)); redraw(); });
+  E.querySelectorAll('[data-c]').forEach(i => i.oninput = () => { L[i.dataset.c] = i.value; redraw(); });
+  E.querySelectorAll('[data-s]').forEach(i => i.oninput = () => { L[i.dataset.s] = +i.value; redraw(); });
+  E.querySelector('[data-g]').onclick = e => { L.glasses = !L.glasses; e.target.classList.toggle('on', L.glasses); redraw(); };
   redraw();
 }
+function cpIcons() { const sp = CP.setup && CP.setup.speak; $('cpVoiceT').innerHTML = sp ? '&#128266;' : '&#128263;'; $('cpVoiceT').classList.toggle('on', !!sp); $('cpVoiceT').title = sp ? 'Reading replies aloud (tap to stop)' : 'Replies are silent (tap to read aloud)'; }
 async function cpChatView() {
   $('cpSetup').style.display = 'none'; $('cpChat').style.display = ''; $('cpPreview').textContent = ''; /* one avatar at a time: the drawing uses fixed ids */
-  $('cpWho').textContent = CP.setup.name; $('cpTab').textContent = CP.setup.name;
-  cpAv = await cpLoadAvatar(CP.setup.look, $('cpStage'));
-  $('cpModes').innerHTML = CP_MODES.map(([k, n]) => `<button class="sm" data-m="${k}" style="${k === cpMode ? 'border-color:var(--acc);color:var(--acc)' : ''}">${n}</button>`).join('');
-  $('cpModes').querySelectorAll('button').forEach(b => b.onclick = () => { cpMode = b.dataset.m; localStorage.setItem('cpMode', cpMode); cpChatView(); });
-  cpRender();
+  $('cpWho').textContent = CP.setup.name; $('cpTab').textContent = CP.setup.name; $('cpFullName').textContent = CP.setup.name;
+  $('cpStage').textContent = ''; cpAv = await cpLoadAvatar(CP.setup.look, $('cpStage'));
+  $('cpModes').innerHTML = CP_MODES.map(([k, n]) => `<button data-m="${k}" class="${k === cpMode ? 'on' : ''}">${n}</button>`).join('');
+  $('cpModes').querySelectorAll('button').forEach(b => b.onclick = () => { cpMode = b.dataset.m; localStorage.setItem('cpMode', cpMode); $('cpModes').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); });
+  cpIcons(); cpRender();
 }
+/* tap her portrait: the same drawing moves to a full screen view and shows all of her */
+function cpFullOpen() {
+  if (!cpAv) return; $('cpFull').style.display = 'flex'; const st = $('cpStage');
+  st.style.aspectRatio = '200/' + 480; st.style.width = 'auto'; st.style.height = '100%'; st.style.borderRadius = '0'; st.style.cursor = 'default'; $('cpFullStage').appendChild(st); cpAv.view('full'); cpFullSay();
+}
+function cpFullClose() {
+  if ($('cpFull').style.display === 'none') return; $('cpFull').style.display = 'none'; const st = $('cpStage');
+  st.style.aspectRatio = '1'; st.style.width = '100%'; st.style.height = ''; st.style.borderRadius = '16px'; st.style.cursor = 'zoom-in'; $('cpStageBox').appendChild(st); if (cpAv) cpAv.view('portrait');
+}
+function cpFullSay() { const h = (CP && CP.history) || []; const last = [...h].reverse().find(m => m.who === 'them'); $('cpFullSay').textContent = CP && CP.waiting ? `${CP.setup.name} is thinking...` : last ? last.text : ''; }
+$('cpFullBtn').onclick = cpFullOpen; $('cpFullX').onclick = cpFullClose; $('cpFullEdit').onclick = () => cpSetupView(true);
+$('cpFullSend').onclick = async () => { const t = $('cpFullIn').value.trim(); if (!t) return; $('cpFullIn').value = ''; if (cpAv) cpAv.feel(t); await api('/api/companion/say', { text: t, mode: cpMode }); cpPoll(); };
+$('cpFullIn').onkeydown = e => { if (e.key === 'Enter') $('cpFullSend').onclick(); };
 function cpRender() {
   const h = CP.history || [];
   $('cpConvos').innerHTML = (CP.convos || []).map(c => `<button class="tab${c.id === CP.current ? ' on' : ''}" data-c="${c.id}">${esc(c.name)}${c.id === CP.current && CP.convos.length > 1 ? '<span class="x" data-x="1">&times;</span>' : ''}</button>`).join('') + `<button class="tab" data-new="1" title="New conversation">+</button>`;
   $('cpConvos').querySelectorAll('.tab').forEach(b => b.onclick = async e => { if (b.dataset.new) { const n = prompt('Name this conversation'); if (n == null) return; CP = await api('/api/companion/convo', { name: n || 'New' }); } else if (e.target.dataset.x) { if (!confirm('Close this conversation?')) return; CP = await api('/api/companion/convo', { id: CP.current, close: true }); } else CP = await api('/api/companion/convo', { id: b.dataset.c }); CP = await api('/api/companion'); cpSeen = (CP.history || []).length; cpRender(); });
-  $('cpLog').innerHTML = h.map(m => m.who === 'me' ? `<div style="text-align:right;margin:6px 0"><span style="display:inline-block;background:#24324a;border-radius:12px;padding:8px 11px;max-width:85%;text-align:left;white-space:pre-wrap">${esc(m.text)}</span></div>` : m.who === 'note' ? `<div class="dim" style="margin:6px 0">${esc(m.text)}</div>` : `<div style="margin:6px 0"><span style="display:inline-block;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 11px;max-width:85%;white-space:pre-wrap">${esc(m.text)}</span></div>`).join('') || `<p class="dim">Say anything. It stays on your PC model.</p>`;
+  const pic = m => m.image ? `<a href="${esc(m.image)}" target="_blank"><img src="${esc(m.image)}" style="max-width:180px;max-height:180px;border-radius:10px;display:block;margin:0 0 4px auto"></a>${m.seen ? `<details style="text-align:right"><summary class="dim" style="font-size:12px">what she sees</summary><div class="dim" style="font-size:13px">${esc(m.seen)}</div></details>` : ''}` : '';
+  $('cpLog').innerHTML = h.map(m => m.who === 'me' ? `<div style="text-align:right;margin:6px 0">${pic(m)}${m.text ? `<span style="display:inline-block;background:#24324a;border-radius:12px;padding:8px 11px;max-width:85%;text-align:left;white-space:pre-wrap">${esc(m.text)}</span>` : ''}</div>` : m.who === 'note' ? `<div class="dim" style="margin:6px 0">${esc(m.text)}</div>` : `<div style="margin:6px 0"><span style="display:inline-block;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 11px;max-width:85%;white-space:pre-wrap">${esc(m.text)}</span></div>`).join('') || `<p class="dim">Say anything. It stays on your PC model.</p>`;
   $('cpLog').scrollTop = 1e9;
   $('cpStatus').textContent = CP.stuck ? CP.stuck : CP.waiting ? `${CP.setup.name} is thinking...` : CP.pc ? '' : 'PC worker offline: sending will try to start it.'; $('cpStatus').className = CP.stuck ? 'st-waiting' : 'dim';
   if (cpAv) cpAv.setThinking(!!CP.waiting);
+  if ($('cpFull').style.display !== 'none') cpFullSay();
 }
 async function companion() {
   CP = await api('/api/companion');
@@ -331,10 +374,14 @@ async function companion() {
   if ($('cpChat').style.display === 'none' && $('cpSetup').style.display !== 'none' && $('cpCancel').style.display !== 'none') return;
   cpSeen = (CP.history || []).length; await cpChatView();
 }
-$('cpSave').onclick = async () => { await api('/api/companion/setup', { name: $('cpName').value || 'Companion', about: $('cpAbout').value, voice: $('cpVoice').value, speak: $('cpSpeak').checked, look: cpLook() }); CP = await api('/api/companion'); cpChatView(); };
+$('cpSave').onclick = async () => { const d = cpDraft; await api('/api/companion/setup', { name: $('cpName').value || 'Companion', about: $('cpAbout').value, voice: $('cpVoice').value, speak: $('cpSpeak').checked, imageReader: $('cpReader').value, look: d.look }); CP = await api('/api/companion'); cpChatView(); };
 $('cpCancel').onclick = () => cpChatView();
 $('cpEdit').onclick = () => cpSetupView(true);
+$('cpVoiceT').onclick = async () => { const S = CP.setup; await api('/api/companion/setup', { ...S, speak: !S.speak }); CP = await api('/api/companion'); cpIcons(); };
 $('cpClear').onclick = async () => { if (!confirm('Clear this conversation? Its messages are deleted.')) return; await api('/api/companion/clear', {}); companion(); };
+/* a picture for her: shrunk on the phone first (long side 1280), sent with whatever you type */
+$('cpPicBtn').onclick = () => $('cpFile').click();
+$('cpFile').onchange = () => { const f = $('cpFile').files[0]; if (!f) return; const img = new Image(); img.onload = () => { const k = Math.min(1, 1280 / Math.max(img.width, img.height)); const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); cpPic = c.toDataURL('image/jpeg', 0.85); URL.revokeObjectURL(img.src); $('cpPicPrev').innerHTML = `<div class="row" style="margin:4px 0"><img src="${cpPic}" style="height:60px;border-radius:8px"><button class="sm" id="cpPicX">Remove</button><span class="dim">Sends with your next message</span></div>`; $('cpPicX').onclick = () => { cpPic = null; $('cpPicPrev').innerHTML = ''; }; }; img.src = URL.createObjectURL(f); $('cpFile').value = ''; };
 $('cpMic').onclick = () => { if (listening && micTarget === 'cpIn') { micOff(); $('cpMic').classList.remove('on'); return; } if (listening) micOff(); micTarget = 'cpIn'; micOn(); $('cpMic').classList.add('on'); };
 /* talking mouth: follow the loudness of the voice clip */
 function cpPlay(url) {
@@ -359,9 +406,10 @@ async function cpPoll() {
   if (CP.waiting) cpTimer = setTimeout(cpPoll, CP.stuck ? 6000 : 2000);
 }
 $('cpSend').onclick = async () => {
-  const t = $('cpIn').value.trim(); if (!t) return; $('cpIn').value = '';
-  if (cpAv) cpAv.feel(t);
-  await api('/api/companion/say', { text: t, mode: cpMode }); cpPoll();
+  const t = $('cpIn').value.trim(); if (!t && !cpPic) return; $('cpIn').value = '';
+  if (cpAv && t) cpAv.feel(t);
+  const image = cpPic; cpPic = null; $('cpPicPrev').innerHTML = '';
+  const r = await api('/api/companion/say', { text: t, mode: cpMode, ...(image ? { image } : {}) }); if (r.error) alert(r.error); cpPoll();
 };
 $('cpIn').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !('ontouchstart' in window)) { e.preventDefault(); $('cpSend').onclick(); } };
 

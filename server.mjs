@@ -67,7 +67,7 @@ const SESSION = crypto.createHash('sha256').update('hub:' + PASS).digest('hex').
 const authed = req => !PASS || (req.headers.cookie || '').includes(`hub=${SESSION}`);
 const isWorker = req => WTOKEN && String(req.headers.authorization || '').trim() === `Bearer ${WTOKEN}`;
 const send = (res, code, obj) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)); };
-const body = req => new Promise(ok => { let b = ''; req.on('data', c => { b += c; if (b.length > 2e6) req.destroy(); }); req.on('end', () => { try { ok(JSON.parse(b || '{}')); } catch { ok({}); } }); });
+const body = (req, max = 2e6) => new Promise(ok => { let b = ''; req.on('data', c => { b += c; if (b.length > max) req.destroy(); }); req.on('end', () => { try { ok(JSON.parse(b || '{}')); } catch { ok({}); } }); });
 
 /* a routed thought becomes a job. Whether it runs now or waits depends on autonomy, the tool's gate and whether it spends credits. */
 /* ---- the report every finished job ends with, in the same shape as a Claude session's: done, tested, not tested,
@@ -250,6 +250,14 @@ function startSplit({ text, plan, repo, label, thread }) {
 function fillSlot(parent, id, fill) { const sl = parent.slots.find(x => x.id === id); if (sl) sl.fill = fill; }
 
 /* called after any change to a job that belongs to a split */
+/* a picture read by Claude (only when he chose Claude as the picture reader for the companion) */
+async function describeImage(kind, b64) {
+  const r = await claude.beta.messages.create({ model: process.env.HUB_ROUTER_MODEL || 'claude-opus-5-5', max_tokens: 600, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
+    messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: `image/${kind}`, data: b64 } }, { type: 'text', text: VISION_ASK }] }] });
+  const t = r.content.find(x => x.type === 'text'); return t ? t.text : '';
+}
+const VISION_ASK = 'Describe this picture for a friend who cannot see it: what is in it, any people and what they are doing, any text word for word, the setting and the mood. 3 to 6 plain sentences. Never use em dashes.';
+
 /* ask the PC model one thing and wait for the answer (through the worker; quiet, so it is not shown as a job) */
 function askPc(system, text, waitMs = 90000) {
   if (!workerOnline() || !worker.can.includes('pc-model')) return Promise.resolve(null);
@@ -338,7 +346,7 @@ http.createServer(async (req, res) => {
       worker.seen = Date.now();
       if (p === '/api/worker/next') { const offer = (u.searchParams.get('can') || '').split(',').filter(Boolean); worker.can = u.searchParams.has('has') ? (u.searchParams.get('has') || '').split(',').filter(Boolean) : offer; const nj = L.next(offer); if (nj) { nj.startedAt = Date.now(); nj.step = 'picked up by the PC'; } return send(res, 200, { job: nj }); }
       if (p === '/api/worker/done' && req.method === 'POST') { const b = await body(req); const j = L.get(b.id); if (!j) return send(res, 404, {}); if (j.backend === 'readdir') { const n = b.ok ? U.fromPcFiles(b.result && b.result.files, j.dir) : 0; return send(res, 200, L.update(j.id, { status: b.ok ? 'done' : 'failed', error: b.error, result: { text: `${n} new update(s)` } }, 'update folder read')); }
-      if (j.backend === 'read') { if (b.ok && b.result && b.result.foundAt && b.result.foundAt !== j.source.path) PJ.remember(j.project, j.source.path, b.result.foundAt); const added = PJ.recordPc(j.project, j.source, b.ok, b.text || '', b.error); return send(res, 200, L.update(j.id, { status: b.ok ? 'done' : 'failed', error: b.error, result: { text: b.ok ? `${added.length} new note(s)` : '' } }, 'notes read')); } const text = b.text != null ? rejoin(b.text, j.held || []) : undefined; if (j.companion && b.ok) CP.add('them', b.text || '', { job: j.id, convo: j.convo }); else if (j.companion) CP.add('note', `No reply: ${b.error || 'the PC model did not answer'}`, { convo: j.convo });
+      if (j.backend === 'read') { if (b.ok && b.result && b.result.foundAt && b.result.foundAt !== j.source.path) PJ.remember(j.project, j.source.path, b.result.foundAt); const added = PJ.recordPc(j.project, j.source, b.ok, b.text || '', b.error); return send(res, 200, L.update(j.id, { status: b.ok ? 'done' : 'failed', error: b.error, result: { text: b.ok ? `${added.length} new note(s)` : '' } }, 'notes read')); } const text = b.text != null ? rejoin(b.text, j.held || []) : undefined; if (j.image64) { delete j.image64; } if (j.pic && b.result && b.result.seen) CP.seen(j.pic, b.result.seen); if (j.companion && b.result && b.result.visionNote) CP.add('note', b.result.visionNote, { convo: j.convo }); if (j.companion && b.ok) CP.add('them', b.text || '', { job: j.id, convo: j.convo }); else if (j.companion) CP.add('note', `No reply: ${b.error || 'the PC model did not answer'}`, { convo: j.convo });
         if (b.result && b.result.audio64) { fs.mkdirSync(IMG_DIR, { recursive: true }); const f = `${j.id}.wav`; fs.writeFileSync(path.join(IMG_DIR, f), Buffer.from(b.result.audio64, 'base64')); b.result.audio = `/api/img/${f}`; delete b.result.audio64; if (j.of) { const src = L.get(j.of); if (src) L.update(src.id, { result: { ...src.result, audio: b.result.audio } }, 'read aloud ready'); } }
         if (b.result && b.result.images64) { fs.mkdirSync(IMG_DIR, { recursive: true }); b.result.images = b.result.images64.map(im => { const f = `${j.id}-${im.name.replace(/[^\w.-]/g, '')}`; fs.writeFileSync(path.join(IMG_DIR, f), Buffer.from(im.data, 'base64')); return `/api/img/${f}`; }); delete b.result.images64; b.result.restyle = j.tool === 'image' && j.mode === 'model'; }
         const fin = afterChange(L.update(b.id, { status: b.ok ? 'done' : 'failed', result: { ...b.result, text }, error: b.error }, b.ok ? 'back from the PC' : 'PC reported a failure'));
@@ -350,7 +358,7 @@ http.createServer(async (req, res) => {
 
     if (p.startsWith('/api/') && !authed(req)) return send(res, 401, { error: 'login' });
     const im = p.match(/^\/api\/img\/([\w.-]+)$/);
-    if (im) { const f = path.join(IMG_DIR, im[1]); if (!fs.existsSync(f)) return send(res, 404, {}); res.writeHead(200, { 'content-type': f.endsWith('.png') ? 'image/png' : f.endsWith('.wav') ? 'audio/wav' : 'image/webp' }); return fs.createReadStream(f).pipe(res); }
+    if (im) { const f = path.join(IMG_DIR, im[1]); if (!fs.existsSync(f)) return send(res, 404, {}); res.writeHead(200, { 'content-type': f.endsWith('.png') ? 'image/png' : f.endsWith('.wav') ? 'audio/wav' : f.endsWith('.jpg') ? 'image/jpeg' : 'image/webp' }); return fs.createReadStream(f).pipe(res); }
     const one = p.match(/^\/api\/jobs\/([a-f0-9]+)$/);
     if (one && req.method === 'GET') { const j = L.get(one[1]); return j ? send(res, 200, dress(j)) : send(res, 404, {}); }
     const rt = p.match(/^\/api\/jobs\/([a-f0-9]+)\/retry$/);
@@ -412,10 +420,19 @@ http.createServer(async (req, res) => {
     if (p === '/api/companion/clear' && req.method === 'POST') { CP.clear(); return send(res, 200, { ok: true }); }
     if (p === '/api/companion/say' && req.method === 'POST') {
       /* one turn: his line goes into the history, the PC model gets the recent conversation; no filters, PC only */
-      const b = await body(req); const text = String(b.text || '').trim(); if (!text) return send(res, 400, { error: 'say something' });
-      const mode = CP.MODES.includes(b.mode) ? b.mode : 'chat'; const convo = CP.state().current; CP.add('me', text, { mode, convo });
+      const b = await body(req, 9e6); const text = String(b.text || '').trim();
+      /* a picture: saved here, then read by a vision model (on the PC, or Claude if he chose that), and she answers what it shows */
+      const im = typeof b.image === 'string' && b.image.match(/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/);
+      if (!text && !im) return send(res, 400, { error: 'say something' });
+      const mode = CP.MODES.includes(b.mode) ? b.mode : 'chat'; const convo = CP.state().current;
+      let pic = null, picUrl = null;
+      if (im) { pic = crypto.randomBytes(6).toString('hex'); fs.mkdirSync(IMG_DIR, { recursive: true }); const f = `cp-${pic}.${im[1] === 'jpeg' ? 'jpg' : im[1]}`; fs.writeFileSync(path.join(IMG_DIR, f), Buffer.from(im[2], 'base64')); picUrl = `/api/img/${f}`; }
+      CP.add('me', text, { mode, convo, ...(pic ? { image: picUrl, pic } : {}) });
+      const reader = (CP.state().setup || {}).imageReader || 'pc';
+      if (im && reader === 'claude' && claude) { try { CP.seen(pic, await describeImage(im[1], im[2])); } catch (e) { CP.add('note', `Claude could not read the picture: ${String(e.message || e).slice(0, 160)}`, { convo }); } }
       const rq = CP.request(mode);
-      const j = L.add({ tool: 'companion', mode, backend: 'pc-model', runsOn: 'pc', label: `Companion: ${mode}`, text, system: rq.system, messages: rq.messages, maxTokens: 600, companion: true, convo, status: 'queued', quiet: true });
+      const needPc = im && !(CP.state(400).history.find(m => m.pic === pic) || {}).seen;
+      const j = L.add({ tool: 'companion', mode, backend: 'pc-model', runsOn: 'pc', label: `Companion: ${mode}`, text: text || '(a picture)', system: rq.system, messages: rq.messages, maxTokens: 600, companion: true, convo, status: 'queued', quiet: true, ...(needPc ? { image64: im[2], imageMime: `image/${im[1]}`, pic } : {}) });
       if (!workerOnline()) PA.jumpstart(['worker', 'model']).catch(() => {}); else if (!worker.can.includes('pc-model')) PA.jumpstart(['model']).catch(() => {});
       return send(res, 200, { ok: true, id: j.id });
     }
