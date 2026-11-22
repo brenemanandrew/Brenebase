@@ -281,6 +281,13 @@ function startSplit({ text, plan, repo, label, thread }) {
 function fillSlot(parent, id, fill) { const sl = parent.slots.find(x => x.id === id); if (sl) sl.fill = fill; }
 
 /* called after any change to a job that belongs to a split */
+/* deploying Brenebase from its own page: runs the "Brenebase Deploy" workflow (DEPLOY_TOKEN, or GITHUB_TOKEN if it may run Actions).
+   Tapping the button is Andrew asking for the deploy. Job branches for Brenebase can be merged into main first. */
+const GH_REPO = 'brenemanandrew/Brenebase';
+const ghApi = async (pth, method = 'GET', body) => { const t = process.env.DEPLOY_TOKEN || process.env.GITHUB_TOKEN; if (!t) throw new Error('No GitHub token on Brenebase. Add the secret BRENEBASE_DEPLOY_TOKEN (Brenebase repo only, Actions and Contents read and write), then deploy once by hand.'); const r = await fetch(`https://api.github.com/repos/${GH_REPO}${pth}`, { method, headers: { authorization: `Bearer ${t}`, accept: 'application/vnd.github+json', 'user-agent': 'brenebase', ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(20000) }); const txt = await r.text(); let d; try { d = JSON.parse(txt); } catch { d = {}; } if (!r.ok) throw new Error(r.status === 403 || r.status === 404 ? `GitHub refused (${r.status}): the token may not run Actions or write to ${GH_REPO}. Use BRENEBASE_DEPLOY_TOKEN with Actions and Contents read and write.` : `GitHub ${r.status}: ${d.message || txt.slice(0, 160)}`); return d; };
+const deployNow = () => ghApi('/actions/workflows/deploy.yml/dispatches', 'POST', { ref: 'main' });
+async function deployState() { const d = await ghApi('/actions/workflows/deploy.yml/runs?per_page=1'); const r = (d.workflow_runs || [])[0]; return r ? { status: r.status, conclusion: r.conclusion, at: r.created_at, sha: (r.head_sha || '').slice(0, 7), title: (r.head_commit && r.head_commit.message || '').split('\n')[0].slice(0, 100), url: r.html_url } : null; }
+
 /* a picture pasted into Send or Images: kept as a file, the job carries its path; read back when the work starts */
 function savePic(dataUrl) {
   const m = typeof dataUrl === 'string' && dataUrl.match(/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/); if (!m) return null;
@@ -397,6 +404,13 @@ http.createServer(async (req, res) => {
       if (p === '/api/worker/next' && Date.now() - SK.pcState().at > 1800000 && !L.list(200).some(x => x.backend === 'skills-list' && ['queued', 'running'].includes(x.status)) && (u.searchParams.get('has') || u.searchParams.get('can') || '').includes('skills-list')) L.add({ tool: 'skills', mode: 'read', backend: 'skills-list', runsOn: 'pc', label: 'Read the skill folders on the PC', text: 'Read every SKILL.md in the PC skill folders.', status: 'queued', quiet: true });
       if (p === '/api/worker/next') { const offer = (u.searchParams.get('can') || '').split(',').filter(Boolean); worker.can = u.searchParams.has('has') ? (u.searchParams.get('has') || '').split(',').filter(Boolean) : offer; const nj = L.next(offer); if (nj) { nj.startedAt = Date.now(); nj.step = 'picked up by the PC'; } return send(res, 200, { job: nj }); }
       if (p === '/api/worker/done' && req.method === 'POST') { const b = await body(req); const j = L.get(b.id); if (!j) return send(res, 404, {}); if (j.backend === 'readdir') { const n = b.ok ? U.fromPcFiles(b.result && b.result.files, j.dir) : 0; return send(res, 200, L.update(j.id, { status: b.ok ? 'done' : 'failed', error: b.error, result: { text: `${n} new update(s)` } }, 'update folder read')); }
+      if (j.backend === 'push-branch') {
+        if (!b.ok) return send(res, 200, L.update(j.id, { status: 'failed', error: b.error || 'The PC could not push the branch.' }, 'push failed'));
+        L.update(j.id, { status: 'running', step: 'merging into main on GitHub' }, 'branch pushed');
+        (async () => { try { const m = await ghApi('/merges', 'POST', { base: 'main', head: j.branch, commit_message: `Merge ${j.branch} (Brenebase job ${j.of})` }); L.update(j.id, { step: 'deploying' }, m && m.sha ? `merged as ${m.sha.slice(0, 7)}` : 'already in main'); await deployNow(); L.update(j.id, { status: 'done', result: { text: `Merged ${j.branch} into main and started the deploy. Reload Brenebase in about a minute; tap Update now on the PC tab if the worker changed.` } }, 'deploy started'); }
+          catch (e) { L.update(j.id, { status: 'failed', error: String(e.message || e) }, 'ship failed'); } })();
+        return send(res, 200, { ok: true });
+      }
       if (j.backend === 'skills-list') { const r = b.result || {}; SK.setPc(b.ok ? r.files : [], b.ok ? ((r.errors || []).join('; ') || null) : (b.error || 'the PC could not read them')); return send(res, 200, L.update(j.id, { status: b.ok ? 'done' : 'failed', error: b.error, result: { text: b.text } }, 'skills read')); }
       if (j.backend === 'read') { if (b.ok && b.result && b.result.foundAt && b.result.foundAt !== j.source.path) PJ.remember(j.project, j.source.path, b.result.foundAt); const added = PJ.recordPc(j.project, j.source, b.ok, b.text || '', b.error); return send(res, 200, L.update(j.id, { status: b.ok ? 'done' : 'failed', error: b.error, result: { text: b.ok ? `${added.length} new note(s)` : '' } }, 'notes read')); } const text = b.text != null ? rejoin(b.text, j.held || []) : undefined; if (j.image64) { delete j.image64; } if (j.pic && b.result && b.result.seen) CP.seen(j.pic, b.result.seen); if (j.companion && b.result && b.result.visionNote) CP.add('note', b.result.visionNote, { convo: j.convo }); if (j.companion && b.ok) CP.add('them', b.text || '', { job: j.id, convo: j.convo }); else if (j.companion) CP.add('note', `No reply: ${b.error || 'the PC model did not answer'}`, { convo: j.convo });
         if (b.result && b.result.audio64) { fs.mkdirSync(IMG_DIR, { recursive: true }); const f = `${j.id}.wav`; fs.writeFileSync(path.join(IMG_DIR, f), Buffer.from(b.result.audio64, 'base64')); b.result.audio = `/api/img/${f}`; delete b.result.audio64; if (j.of) { const src = L.get(j.of); if (src) L.update(src.id, { result: { ...src.result, audio: b.result.audio } }, 'read aloud ready'); } }
@@ -414,6 +428,16 @@ http.createServer(async (req, res) => {
     const one = p.match(/^\/api\/jobs\/([a-f0-9]+)$/);
     if (one && req.method === 'GET') { const j = L.get(one[1]); return j ? send(res, 200, dress(j)) : send(res, 404, {}); }
     /* make it again: a new job with the same request, so the pictures already made stay */
+    if (p === '/api/deploy' && req.method === 'GET') { try { return send(res, 200, { last: await deployState() }); } catch (e) { return send(res, 200, { error: String(e.message || e) }); } }
+    if (p === '/api/deploy' && req.method === 'POST') { try { await deployNow(); return send(res, 200, { ok: true, note: 'Deploy started. Brenebase restarts in about a minute; reload the page then.' }); } catch (e) { return send(res, 200, { error: String(e.message || e) }); } }
+    /* a finished Brenebase code job: push its branch from the PC, merge it into main on GitHub, deploy */
+    const sh = p.match(/^\/api\/jobs\/([a-f0-9]+)\/ship$/);
+    if (sh && req.method === 'POST') {
+      const o = L.get(sh[1]); if (!o || o.backend !== 'claude-code' || o.status !== 'done' || !o.result || !o.result.branch) return send(res, 400, { error: 'Only a finished code job with a branch can be shipped.' });
+      if (!/(^|\/)brenebase$/i.test(o.repo || '')) return send(res, 200, { handoff: `Branch ${o.result.branch} in ${o.result.worktree || 'its worktree'} on the PC is ready for the ${o.project || o.repo} master session to review, test, merge and deploy. Jobs never merge or deploy other projects.` });
+      const j = L.add({ tool: 'ship', mode: 'brenebase', backend: 'push-branch', runsOn: 'pc', label: `Ship: merge ${o.result.branch} into main and deploy`, text: `Push ${o.result.branch} from the PC, merge it into main on GitHub, then deploy Brenebase.`, repo: o.repo, branch: o.result.branch, worktree: o.result.worktree, of: o.id, status: 'queued' });
+      return send(res, 200, dress(j));
+    }
     const ag = p.match(/^\/api\/jobs\/([a-f0-9]+)\/again$/);
     if (ag && req.method === 'POST') { const o = L.get(ag[1]); if (!o) return send(res, 404, {}); const { noTwin, ...args } = o.args || {}; let j = makeJob({ text: o.text, tool: o.tool, mode: o.mode, area: o.area, autonomy: o.autonomy, args: { ...args, noTwin: true }, repo: o.repo, project: o.project || '', thread: o.thread, pic: o.pic }); if (j.status === 'ready') j = await start(j); return send(res, 200, dress(j)); }
     const rt = p.match(/^\/api\/jobs\/([a-f0-9]+)\/retry$/);

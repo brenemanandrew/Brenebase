@@ -105,5 +105,7 @@ export async function think(text, { claude, askPc, project, tags } = {}) {
   }
   /* nobody could think about it: the rules */
   const v = vet(text);
+  /* Get help on a project's problem or open item is a change to that project's code: one Coder fix part */
+  if (/^fix this in the .+? code:/i.test(text)) { const r = resolve('coder', 'fix'); v.parts = [{ tool: r.tool, mode: r.mode, label: r.label, text: text.replace(/^fix this in the (.+?) code:\s*/i, 'In $1: '), why: 'a fix to the project code' }]; }
   return withSkills({ by: 'rules', summary: '', question: '', local, notes: local && !askPc ? [...notes, 'Private request and the PC worker is offline, so the rules split it'] : notes, parts: v.parts.map(p => ({ ...p, needs: [] })) });
 }

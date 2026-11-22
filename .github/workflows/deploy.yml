@@ -9,6 +9,7 @@
 #   BRENEBASE_TS_AUTHKEY       optional: Tailscale auth key, so Brenebase joins the tailnet
 #   BRENEBASE_PC_TAILNET_HOST  optional: the PC's tailnet name
 #   BRENEBASE_GITHUB_TOKEN     optional: reads private repos (ardenot) for project notes and update files
+#   BRENEBASE_DEPLOY_TOKEN     optional: lets the Deploy button run this workflow and merge Brenebase job branches (fine-grained, Brenebase repo only: Actions and Contents read and write)
 #   BRENEBASE_MESHY_KEY        optional: 3D generate, retexture, rig
 name: Brenebase Deploy
 on:
@@ -41,6 +42,7 @@ jobs:
           TH: ${{ secrets.BRENEBASE_PC_TAILNET_HOST }}
           GT: ${{ secrets.BRENEBASE_GITHUB_TOKEN }}
           MK: ${{ secrets.BRENEBASE_MESHY_KEY }}
+          DT: ${{ secrets.BRENEBASE_DEPLOY_TOKEN }}
         run: |
           # each value passed whole and quoted, so symbols or spaces in a secret cannot change it
           set -- "HUB_PASSWORD=$(printf '%s' "$PW" | tr -d '\r\n' | sed 's/^ *//;s/ *$//')" "HUB_WORKER_TOKEN=$(printf '%s' "$PK" | tr -d '\r\n')"
@@ -49,6 +51,7 @@ jobs:
           [ -n "$TH" ] && set -- "$@" "PC_TAILNET_HOST=$TH"
           [ -n "$GT" ] && set -- "$@" "GITHUB_TOKEN=$GT"
           [ -n "$MK" ] && set -- "$@" "MESHY_API_KEY=$MK"
+          [ -n "$DT" ] && set -- "$@" "DEPLOY_TOKEN=$(printf '%s' "$DT" | tr -d ' \r\n')"
           flyctl secrets set --stage --app brenebase "$@"
       - run: flyctl deploy --remote-only --ha=false --app brenebase
       - name: Check it answers

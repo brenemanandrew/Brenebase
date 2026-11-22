@@ -31,3 +31,17 @@ title: Pictures and the companion share the graphics card; cleanup pass
 - "Cannot find module F:\Projects\Brenelandtest\brenai\tools\clipconv.mjs": PC scripts ran from Andrew's own working copy, which can be behind or on another branch, and the clip converter needs the three package that nothing installed. PC scripts now run from the worker's own copy of the repo's latest main (<repo>-wt\_tools, detached, refreshed each run), and missing packages the script needs are installed there with --no-save. His working copy is never touched. Tested: a fresh copy on another branch stayed on it; the tools copy was made, three installed, the converter ran
 - Clip converter: makes its in and out folders (REPOS\clips-in, clips-out) if missing; with no .fbx files it says "Nothing to convert: put your Mixamo .fbx animation files in ..." instead of crashing. Job reports show the line that says what went wrong, not the first line of a stack trace. Tested in the sandbox
 - Clip converter: with an empty clips-in it looks for .fbx files in the usual places (Downloads, Desktop, Documents, OneDrive, F:\Projects, F:\AI, Mixamo and Animations folders), copies them in (originals stay) and converts them; the result lists what was found. Tested in the sandbox with a file in Downloads
+
+## Done (deploy button, Get help)
+- PC tab: a Brenebase card with Deploy Brenebase (asks to confirm, runs the "Brenebase Deploy" workflow) and the last deploy's state (live, failed or deploying, commit and time)
+- Finished Brenebase code jobs: "Merge and deploy" (the PC pushes the job branch, Brenebase merges it into main on GitHub, then deploys). Other projects' code jobs: "Hand over" copies a note for that project's master session; jobs never merge or deploy other projects
+- Get help on a project's problem or open item goes through the planner on Send with the project picked, as "Fix this in the <project> code: ...", so it lands on the Coder (it went to a mocap link before)
+
+## Settings changed
+- New optional repo secret BRENEBASE_DEPLOY_TOKEN (fine-grained, Brenebase repo only, Actions and Contents read and write), passed to Fly as DEPLOY_TOKEN by the deploy workflow. Without it the button explains what to add
+
+## Tested
+- Headless Chromium: the Deploy card shows the missing-token message; Get help opened Send with Coder: Fix and the Brenai project; node test.mjs 61/61
+
+## Not tested
+- A real deploy and a real merge from the button (no token in the sandbox); pushing a job branch from the PC

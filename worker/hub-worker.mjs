@@ -72,7 +72,7 @@ function wav16(f32, rate) {
 }
 /* project notes on this PC: only files inside these folders can be read (Google Drive for desktop, project folders) */
 const READ_ROOTS = (process.env.READ_ROOTS || 'G:\\My Drive;F:\\Projects;C:\\Program Files (x86)\\World of Warcraft\\_retail_\\Interface\\AddOns').split(';').map(r => path.resolve(r.trim())).filter(Boolean);
-can.push('read', 'readdir', 'probe', 'studio', 'studio-image', 'engines', 'sd-image', 'engine-help', 'skills-list');
+can.push('read', 'readdir', 'probe', 'studio', 'studio-image', 'engines', 'sd-image', 'engine-help', 'skills-list', 'push-branch');
 console.log(`hub worker: ${HUB}\ncan do: ${can.join(', ')}`);
 /* things can come up after the worker (LM Studio's server, Claude Code, the voice pack): look again every minute */
 setInterval(async () => {
@@ -294,6 +294,15 @@ async function doJob(j) { await progress(j, 'started on the PC', '', true);
     return { ok: images.length > 0, text: `${images.length} of ${n} picture(s) made on your PC with ${eng === 'zimage' ? 'Z-Image Turbo' : eng === 'manga' ? 'Illustrious XL + manga LoRA' : 'Illustrious XL'} (${W}x${Hh}).`, result: { images64: images }, error: images.length ? undefined : `The engine made no picture:\n${logs.join('\n---\n')}` };
   }
   /* the engine's own list of options (to wire the movie model up exactly) */
+  /* push a finished job's branch, only for repos Andrew lets Brenebase ship itself (Brenebase); never main, never force */
+  if (j.backend === 'push-branch') {
+    if (!/(^|\/)brenebase$/i.test(j.repo || '')) return { ok: false, error: 'Only Brenebase job branches are pushed from here.' };
+    if (!/^hub\/[\w-]+$/.test(j.branch || '')) return { ok: false, error: `Not a job branch: ${j.branch}` };
+    const dir = j.worktree && fs.existsSync(j.worktree) ? j.worktree : repoDir(j.repo);
+    await progress(j, `pushing ${j.branch}`, '', true);
+    const r = await run('git', ['push', 'origin', `${j.branch}:${j.branch}`], dir);
+    return { ok: r.code === 0, text: (r.out + r.err).slice(-1500), error: r.code ? (r.err || r.out).slice(-600) : undefined };
+  }
   if (j.backend === 'skills-list') { const r = readSkills(); return { ok: true, text: `${r.files.length} skill(s) read${r.errors.length ? '; could not read: ' + r.errors.join('; ') : ''}`, result: r }; }
   if (j.backend === 'engine-help') {
     const SD = process.env.SD_CLI || 'F:\\AI\\minimax-h3\\sd-cli\\sd-cli.exe'; if (!fs.existsSync(SD)) return { ok: false, error: `Not found: ${SD}` };

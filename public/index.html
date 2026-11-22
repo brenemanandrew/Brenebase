@@ -144,7 +144,7 @@ details.card>summary{cursor:pointer;list-style:none}details.card>summary::-webki
     <div style="display:flex;gap:6px;padding:8px 10px 14px"><input id="cpFullIn" placeholder="Say it." style="flex:1;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--text)"><button class="go" id="cpFullSend">Send</button></div>
   </div>
 </section>
-<section id="pc" style="display:none"><div id="pcBox"></div><div id="skBox"></div></section>
+<section id="pc" style="display:none"><div class="card"><div class="row" style="margin:0"><b>&#128640; Brenebase</b><button class="sm" onclick="deployNow(this)">&#128640; Deploy Brenebase</button></div><div id="depState" style="margin-top:6px"></div></div><div id="pcBox"></div><div id="skBox"></div></section>
 <section id="tools" style="display:none"><div id="catalogue"></div></section>
 </main>
 <button id="rxBubble" title="Results" style="position:fixed;right:16px;bottom:16px;width:58px;height:58px;border-radius:50%;border:2px solid var(--acc);background:var(--card);color:var(--text);font-weight:700;font-size:22px;z-index:20;box-shadow:0 4px 18px #0008">&#128172;<span id="rxBadge" style="display:none;position:absolute;top:-4px;right:-4px;background:var(--bad);color:#fff;border-radius:10px;font-size:12px;padding:1px 6px"></span></button>
@@ -352,7 +352,7 @@ function jobCard(j) {
   ${r.audio ? `<audio controls src="${esc(r.audio)}" style="width:100%;margin-top:6px"></audio>` : ''}
   ${output}
   ${j.partJobs ? `<details${j.status !== 'done' ? ' open' : ''}><summary class="dim">The parts</summary>${j.partJobs.map(jobCard).join('')}</details>` : ''}
-  <div class="row">${btns}<button class="sm" onclick="checkJob('${j.id}', this)">Check status</button>${j.status === 'failed' ? `<button class="sm" onclick="retryJob('${j.id}')">Retry</button>` : ''}${j.status === 'done' && ['sd-image', 'studio-image'].includes(j.backend) ? `<button class="sm" onclick="againJob('${j.id}').then(jobs)">Make again</button>` : ''}${j.status === 'done' && r.text ? `<button class="sm" onclick="speak('${j.id}', this)">&#128266; Read aloud</button>` : ''}</div></div></div>`;
+  <div class="row">${btns}<button class="sm" onclick="checkJob('${j.id}', this)">Check status</button>${j.status === 'failed' ? `<button class="sm" onclick="retryJob('${j.id}')">Retry</button>` : ''}${j.status === 'done' && j.backend === 'claude-code' && r.branch ? `<button class="sm" onclick="shipJob('${j.id}', this)">${/brenebase$/i.test(j.repo || '') ? '&#128640; Merge and deploy' : '&#128230; Hand over'}</button>` : ''}${j.status === 'done' && ['sd-image', 'studio-image'].includes(j.backend) ? `<button class="sm" onclick="againJob('${j.id}').then(jobs)">Make again</button>` : ''}${j.status === 'done' && r.text ? `<button class="sm" onclick="speak('${j.id}', this)">&#128266; Read aloud</button>` : ''}</div></div></div>`;
 }
 /* job cards fold up by tapping their header. Done cards start folded; whatever you open or close is remembered. */
 const JOB_FOLD = JSON.parse(localStorage.getItem('jobFold') || '{}');
@@ -667,12 +667,13 @@ async function projects() {
       <div class="dim" style="margin-top:6px;font-size:13px">Sources: ${src.length ? src.map(x => `${esc(x.label)} ${x.error ? '<span class="st-failed">' + esc(x.error) + '</span>' : 'checked ' + ago(x.checked)}`).join('; ') : (c.sources || []).length ? 'not read yet' : 'none yet'}</div></details>`;
   }).join('');
 }
-window.help = async (id, btn) => { btn.disabled = true; const j = await api(`/api/projects/${id}/help`, { item: btn.dataset.item }); btn.textContent = j.label ? `Sent: ${j.label}` : 'Failed'; };
+/* Get help goes through the planner on Send (with the project picked and its skills searched), so a code change lands on the Coder */
+window.help = async (id, btn) => { SENDPJ = id; localStorage.setItem('sendProj', id); sendProjPills(); document.querySelector('nav button[data-tab=send]').click(); const pj = (PJS_ALL || []).find(c => c.id === id); $('thought').value = `Fix this in the ${pj ? pj.name.split(' (')[0] : id} code: ${btn.dataset.item}`; $('goBtn').click(); };
 $('syncBtn').onclick = async () => { $('syncMsg').textContent = 'reading...'; const r = await api('/api/projects/sync', {}); $('syncMsg').textContent = `${r.report.filter(x => /new/.test(x) && !/ 0 new/.test(x)).length} sources changed, ${r.report.filter(x => /FAILED/.test(x)).length} failed, ${r.pcFiles} PC files asked for`; projects(); };
 
 /* ---- PC: the agent on Andrew's PC, reached over Tailscale or by its polling ---- */
 async function pc(quiet) {
-  if (!quiet) skillsCard().then(h => { $('skBox').innerHTML = h; }).catch(() => { });
+  if (!quiet) { skillsCard().then(h => { $('skBox').innerHTML = h; }).catch(() => { }); depState().catch(() => { }); }
   const d = await api('/api/pc'); const st = d.status;
   const loaded = st && st.model && st.model.loaded.length;
   $('adot').className = 'dot' + (d.reach === 'tailscale' ? ' on' : d.reach === 'polling' ? ' on' : '');
@@ -711,6 +712,9 @@ window.enginesFind = async b => { b.disabled = true; b.textContent = 'Looking (s
 window.studioLook = async b => { b.disabled = true; b.textContent = 'Reading (see Jobs)...'; await api('/api/studio/look', {}); };
 window.studioProbe = async b => { b.disabled = true; b.textContent = 'Looking (see Jobs)...'; await api('/api/studio/probe', {}); };
 window.checkJob = async (id, b) => { if (b) b.textContent = 'Checking...'; const j = await api(`/api/jobs/${id}`); const el = document.getElementById('job_' + id); if (el) el.outerHTML = jobCard(j); };
+window.shipJob = async (id, b) => { const brenebase = /Merge/.test(b.textContent); if (brenebase && !confirm('Merge this branch into Brenebase main and deploy it?')) return; b.disabled = true; const r = await api(`/api/jobs/${id}/ship`, {}); if (r.handoff) { navigator.clipboard && navigator.clipboard.writeText(r.handoff).catch(() => { }); b.textContent = 'Copied for the master session'; alert(r.handoff); } else if (r.error) { b.textContent = r.error; } else { b.textContent = 'Shipping (see Jobs)'; jobs(); } };
+window.deployNow = async b => { if (!confirm('Deploy Brenebase now?')) return; b.disabled = true; b.textContent = 'Starting...'; const r = await api('/api/deploy', {}); $('depState').innerHTML = r.error ? `<span class="chip bad">${esc(r.error)}</span>` : `<span class="chip ok">${esc(r.note)}</span>`; b.disabled = false; b.innerHTML = '&#128640; Deploy Brenebase'; setTimeout(depState, 8000); };
+async function depState() { const el = $('depState'); if (!el) return; const d = await api('/api/deploy'); if (d.error) { el.innerHTML = `<span class="chip warn">${esc(d.error)}</span>`; return; } const l = d.last; el.innerHTML = l ? `<span class="chip ${l.conclusion === 'success' ? 'ok' : l.conclusion === 'failure' ? 'bad' : 'warn'}">${l.status === 'completed' ? (l.conclusion === 'success' ? 'live' : l.conclusion) : 'deploying'}</span><span class="dim" style="font-size:13px">${esc(l.sha)} ${esc(l.title)} &middot; ${ago(Date.parse(l.at))}</span>` : '<span class="dim">no deploys yet</span>'; }
 window.againJob = async id => api(`/api/jobs/${id}/again`, {});
 window.retryJob = async id => { const j = await api(`/api/jobs/${id}/retry`, {}); const el = document.getElementById('job_' + id); if (el) el.outerHTML = jobCard(j); };
 window.act = async (id, what) => { const j = await api(`/api/jobs/${id}/${what}`, {}); jobs(); if ($('last').innerHTML.includes(id)) $('last').innerHTML = jobCard(j); };
