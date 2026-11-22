@@ -26,6 +26,18 @@ select{background:var(--card);color:var(--text);border:1px solid var(--line);bor
 pre{white-space:pre-wrap;word-break:break-word;background:#0f1116;border-radius:8px;padding:10px;font-size:13px;max-height:340px;overflow:auto}
 h3{margin:18px 0 6px}.mode{margin:4px 0 4px 10px}
 #login{display:none}
+/* the companion chat, in Brenai's format: a light page with dark ink, a round picture by each name, speech in a hand font, actions as pills */
+@font-face{font-family:"Patrick Hand";src:url(fonts/patrick-hand-latin-400-normal.woff2) format("woff2");font-display:swap}
+@font-face{font-family:"Bangers";src:url(fonts/bangers-latin-400-normal.woff2) format("woff2");font-display:swap}
+#cpLog{background:rgba(255,251,246,.95);border-radius:16px;padding:6px 12px;color:#2a1d45;box-shadow:0 8px 26px rgba(20,8,50,.35)}
+#cpLog .msg{display:grid;grid-template-columns:40px 1fr;column-gap:10px;margin:12px 0;align-items:start}
+#cpLog .pic{width:40px;height:40px;border-radius:50%;object-fit:cover;background:#2f2256;display:grid;place-items:center;color:#fff;font:700 15px system-ui;box-shadow:0 0 0 2px #fff,0 2px 6px rgba(20,8,50,.3)}
+#cpLog .her .pic{outline:2px solid #ff9cc4}#cpLog .me .pic{outline:2px solid #7fd0ff;background:#3b4f7a}
+#cpLog .nm{font:800 12px system-ui;letter-spacing:.05em;text-transform:uppercase;margin:2px 0 2px}#cpLog .her .nm{color:#b81f74}#cpLog .me .nm{color:#5a35c2}
+#cpLog .say{font-family:"Patrick Hand",system-ui,sans-serif;font-size:1.38em;line-height:1.24;color:#2a1d45;white-space:pre-wrap;word-wrap:break-word;margin-bottom:4px}
+#cpLog .act{display:block;width:fit-content;max-width:100%;padding:4px 14px 3px;margin:4px 0;border:1.5px solid;border-radius:999px;font-family:"Bangers",system-ui,sans-serif;font-size:1.06em;letter-spacing:.055em;line-height:1.25}
+#cpLog .her .act{color:#b81f74;border-color:#b81f74;background:rgba(184,31,116,.06)}#cpLog .me .act{color:#5a35c2;border-color:#5a35c2;background:rgba(90,53,194,.06)}
+#cpLog .sys{color:rgba(58,38,92,.68);font-size:13.5px;margin:8px 0 8px 50px}#cpLog img.shot{max-width:200px;max-height:200px;border-radius:10px;display:block;margin:4px 0}#cpLog details{color:#5a4a7a}
 .icons{display:flex;gap:6px;margin:6px 0}.icons button{width:38px;height:38px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--text);font-size:17px;display:flex;align-items:center;justify-content:center;padding:0}.icons button.on{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc) inset}
 .pills{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}.pills button{border-radius:999px;border:1px solid var(--line);background:none;color:var(--dim);padding:5px 12px;font:inherit;font-size:14px}.pills button.on{border-color:var(--acc);color:var(--acc);background:#1b2740}
 .ed h4{margin:12px 0 4px;font-size:14px;color:var(--dim);font-weight:600}.ed .sl{display:flex;align-items:center;gap:8px;margin:4px 0;font-size:14px}.ed .sl span{width:78px;color:var(--dim)}.ed .sl input{flex:1}.ed .cols{display:flex;gap:10px;flex-wrap:wrap}.ed .cols label{display:flex;flex-direction:column;align-items:center;font-size:12px;color:var(--dim)}.ed input[type=color]{width:38px;height:30px;border:0;background:none;padding:0}
@@ -369,7 +381,7 @@ let cpPending = null; let CP = null, cpAv = null, cpMode = localStorage.getItem(
 function cpLoadAvatar(look, el, view) { return new Promise(ok => { window.COMPANION_LOOK = look || {};
   /* a fresh element each time: the old drawing's animation loop and touch handlers end with the old element (they piled up and slowed every redraw) */
   if (el.isConnected) { const fresh = el.cloneNode(false); el.replaceWith(fresh); el = fresh; }
-  const go = () => { window.COMPANION_REACT = $('cpSetup').style.display !== 'none' && cpDraft ? cpDraft.reactions : (CP && CP.setup && CP.setup.reactions) || {}; const av = window.CompanionAvatar.mount(el, { onPortraitTap: () => cpFullOpen(), wardrobe: true, onWardrobe: () => cpTray(), onTouch: (zone, mine) => { if (mine && mine.send && CP && CP.setup && $('cpChat').style.display !== 'none') api('/api/companion/say', { text: mine.send, mode: cpMode }).then(() => cpPoll()); } }); if (view) av.view(view); ok(av); }; if (window.CompanionAvatar) return go(); const sc = document.createElement('script'); sc.src = '/companion-avatar.js?v=2'; sc.onload = go; document.head.appendChild(sc); }); }
+  const go = () => { window.COMPANION_REACT = $('cpSetup').style.display !== 'none' && cpDraft ? cpDraft.reactions : (CP && CP.setup && CP.setup.reactions) || {}; const av = window.CompanionAvatar.mount(el, { onThumb: u => { if (el.id === 'cpStage' && !CPTHUMB) { CPTHUMB = u; if (CP && $('cpChat').style.display !== 'none') cpRender(); } }, onPortraitTap: () => cpFullOpen(), wardrobe: true, onWardrobe: () => cpTray(), onTouch: (zone, mine) => { if (mine && mine.send && CP && CP.setup && $('cpChat').style.display !== 'none') api('/api/companion/say', { text: mine.send, mode: cpMode }).then(() => cpPoll()); } }); if (view) av.view(view); ok(av); }; if (window.CompanionAvatar) return go(); const sc = document.createElement('script'); sc.src = '/companion-avatar.js?v=2'; sc.onload = go; document.head.appendChild(sc); }); }
 /* the look editor: every change redraws the preview; Save keeps it */
 async function cpSetupView(editing) {
   cpFullClose(); window.COMPANION_WORN = {}; $('cpChat').style.display = 'none'; $('cpSetup').style.display = ''; $('cpCancel').style.display = editing ? '' : 'none'; $('cpStage').textContent = ''; cpAv = null;
@@ -420,7 +432,7 @@ function cpIcons() { const sp = CP.setup && CP.setup.speak; $('cpVoiceT').innerH
 async function cpChatView() {
   $('cpSetup').style.display = 'none'; $('cpChat').style.display = ''; $('cpPreview').textContent = ''; /* one avatar at a time: the drawing uses fixed ids */
   $('cpWho').textContent = CP.setup.name; $('cpTab').textContent = CP.setup.name; $('cpFullName').textContent = CP.setup.name;
-  $('cpStage').textContent = ''; cpAv = await cpLoadAvatar(CP.setup.look, $('cpStage'));
+  $('cpStage').textContent = ''; CPTHUMB = ''; cpAv = await cpLoadAvatar(CP.setup.look, $('cpStage'));
   $('cpModes').innerHTML = CP_MODES.map(([k, n]) => `<button data-m="${k}" class="${k === cpMode ? 'on' : ''}">${n}</button>`).join('');
   $('cpModes').querySelectorAll('button').forEach(b => b.onclick = () => { cpMode = b.dataset.m; localStorage.setItem('cpMode', cpMode); $('cpModes').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); });
   cpIcons(); cpRender();
@@ -450,12 +462,30 @@ function cpFullSay() { const h = (CP && CP.history) || []; const last = [...h].r
 $('cpFullBtn').onclick = cpFullOpen; $('cpFullX').onclick = cpFullClose; $('cpFullEdit').onclick = () => cpSetupView(true);
 $('cpFullSend').onclick = async () => { const t = $('cpFullIn').value.trim(); if (!t) return; $('cpFullIn').value = ''; if (cpAv) cpAv.feel(t); await api('/api/companion/say', { text: t, mode: cpMode }); cpPoll.extra = 0; cpPoll(); };
 $('cpFullIn').onkeydown = e => { if (e.key === 'Enter') $('cpFullSend').onclick(); };
+/* her words in Brenai's style: *actions* and her "She smiles." narration become pills, the rest is speech */
+const CP_NARR = /^\s*(she)\s+[a-z']+(s|ed)\b/i;
+function cpSegs(text, who) {
+  const out = [], re = /\*([^*]+)\*|\*([^*]*)$/g; let last = 0, m;
+  const say = t => { if (who !== 'them') { if (t.trim()) out.push({ s: t.trim() }); return; } for (const sent of t.match(/[^.!?\n]+[.!?]*["')]*\s*|\n+/g) || []) { if (CP_NARR.test(sent)) out.push({ a: sent.trim() }); else if (out.length && out[out.length - 1].s !== undefined) out[out.length - 1].s += sent; else if (sent.trim()) out.push({ s: sent }); } };
+  while ((m = re.exec(text))) { if (m.index > last) say(text.slice(last, m.index)); const a = (m[1] ?? m[2] ?? '').trim(); if (a) out.push({ a }); last = re.lastIndex; }
+  if (last < text.length) say(text.slice(last));
+  return out.map(p => p.a !== undefined ? { a: /^(she|he|i|her|his)\b/i.test(p.a) ? p.a : (who === 'them' ? 'she ' : 'Andrew ') + p.a.charAt(0).toLowerCase() + p.a.slice(1) } : { s: p.s.trim() }).filter(p => p.a || p.s);
+}
+var CPTHUMB = '';
+function cpMsg(m) {
+  if (m.who === 'note') return `<div class="sys">${esc(m.text)}</div>`;
+  const her = m.who !== 'me', name = her ? ((CP && CP.setup && CP.setup.name) || 'Her') : 'You';
+  const pic = her ? (CPTHUMB ? `<img class="pic" src="${CPTHUMB}" alt="">` : `<div class="pic">${esc(name[0] || 'H')}</div>`) : `<div class="pic">A</div>`;
+  const shot = m.image ? `<a href="${esc(m.image)}" target="_blank"><img class="shot" src="${esc(m.image)}"></a>${m.seen ? `<details><summary style="font-size:12px">what she sees</summary><div style="font-size:13px">${esc(m.seen)}</div></details>` : ''}` : '';
+  const body = cpSegs(String(m.text || ''), her ? 'them' : 'me').map(p => p.a ? `<span class="act">${esc(p.a)}</span>` : `<div class="say">${esc(p.s)}</div>`).join('');
+  return `<div class="msg ${her ? 'her' : 'me'}">${pic}<div><div class="nm">${esc(name)}</div>${shot}${body}</div></div>`;
+}
 function cpRender() {
   const h = CP.history || [];
   $('cpConvos').innerHTML = (CP.convos || []).map(c => `<button class="tab${c.id === CP.current ? ' on' : ''}" data-c="${c.id}">${esc(c.name)}${c.id === CP.current && CP.convos.length > 1 ? '<span class="x" data-x="1">&times;</span>' : ''}</button>`).join('') + `<button class="tab" data-new="1" title="New conversation">+</button>`;
   $('cpConvos').querySelectorAll('.tab').forEach(b => b.onclick = async e => { if (b.dataset.new) { const n = prompt('Name this conversation'); if (n == null) return; CP = await api('/api/companion/convo', { name: n || 'New' }); } else if (e.target.dataset.x) { if (!confirm('Close this conversation?')) return; CP = await api('/api/companion/convo', { id: CP.current, close: true }); } else CP = await api('/api/companion/convo', { id: b.dataset.c }); CP = await api('/api/companion'); cpSeen = (CP.history || []).length; cpRender(); });
   const pic = m => m.image ? `<a href="${esc(m.image)}" target="_blank"><img src="${esc(m.image)}" style="max-width:180px;max-height:180px;border-radius:10px;display:block;margin:0 0 4px auto"></a>${m.seen ? `<details style="text-align:right"><summary class="dim" style="font-size:12px">what she sees</summary><div class="dim" style="font-size:13px">${esc(m.seen)}</div></details>` : ''}` : '';
-  $('cpLog').innerHTML = h.map(m => m.who === 'me' ? `<div style="text-align:right;margin:6px 0">${pic(m)}${m.text ? `<span style="display:inline-block;background:#24324a;border-radius:12px;padding:8px 11px;max-width:85%;text-align:left;white-space:pre-wrap">${esc(m.text)}</span>` : ''}</div>` : m.who === 'note' ? `<div class="dim" style="margin:6px 0">${esc(m.text)}</div>` : `<div style="margin:6px 0"><span style="display:inline-block;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 11px;max-width:85%;white-space:pre-wrap">${esc(m.text)}</span></div>`).join('') || `<p class="dim">Say anything. It stays on your PC model.</p>`;
+  $('cpLog').innerHTML = h.map(cpMsg).join('') || `<p class="sys" style="margin-left:0">Say anything. It stays on your PC model.</p>`;
   $('cpLog').scrollTop = 1e9;
   $('cpStatus').textContent = CP.stuck ? CP.stuck : CP.waiting ? `${CP.setup.name} is thinking...` : CP.pc ? '' : 'PC worker offline: sending will try to start it.'; $('cpStatus').className = CP.stuck ? 'st-waiting' : 'dim';
   if (cpAv) cpAv.setThinking(!!CP.waiting);
@@ -502,7 +532,7 @@ async function cpPoll() {
   const oldLook = CP && CP.setup && JSON.stringify(CP.setup.look);
   CP = await api('/api/companion'); const h = CP.history || [];
   /* her look changed from the chat: redraw her */
-  if (oldLook && CP.setup && JSON.stringify(CP.setup.look) !== oldLook && $('cpChat').style.display !== 'none') { const full = $('cpFull').style.display !== 'none'; cpAv = await cpLoadAvatar(CP.setup.look, $('cpStage'), full ? 'full' : undefined); if (full) cpTray(); }
+  if (oldLook && CP.setup && JSON.stringify(CP.setup.look) !== oldLook && $('cpChat').style.display !== 'none') { const full = $('cpFull').style.display !== 'none'; CPTHUMB = ''; cpAv = await cpLoadAvatar(CP.setup.look, $('cpStage'), full ? 'full' : undefined); if (full) cpTray(); }
   if (h.length > cpSeen) { const fresh = h.slice(cpSeen); cpSeen = h.length; cpRender(); for (const m of fresh) if (m.who === 'them') { if (cpAv) { cpAv.feel(m.text); cpAv.act && cpAv.act(m.text); } if (CP.setup.speak && m.job) cpSpeak(m.job); } }
   else cpRender();
   if (CP.waiting) cpTimer = setTimeout(cpPoll, CP.stuck ? 6000 : 2000); else if ((cpPoll.extra = (cpPoll.extra || 0) + 1) < 15) cpTimer = setTimeout(cpPoll, 3000);
