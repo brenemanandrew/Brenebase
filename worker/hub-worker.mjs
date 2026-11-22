@@ -312,7 +312,7 @@ let refused = false;
 const HEAVY = ['claude-code', 'merge', 'blender', 'pc-run'];
 const busy = new Map();
 const MAX = +process.env.WORKER_JOBS || 4;
-setInterval(() => { fetch(`${HUB}/api/worker/progress`, { method: 'POST', headers: H, body: JSON.stringify({ busy: [...busy.values()].map(j => j.label) }), signal: AbortSignal.timeout(15000) }).catch(() => { }); }, 10000);
+setInterval(() => { fetch(`${HUB}/api/worker/progress`, { method: 'POST', headers: H, body: JSON.stringify({ busy: [...busy.values()].map(j => j.label), busyIds: [...busy.keys()] }), signal: AbortSignal.timeout(15000) }).catch(() => { }); }, 10000);
 async function finish(job) {
   console.log(`job ${job.id}: ${job.label}`);
   const out = await doJob(job).catch(e => ({ ok: false, error: String(e.message || e) }));

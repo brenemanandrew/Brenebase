@@ -27,7 +27,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#0f1116;border-radius:
 h3{margin:18px 0 6px}.mode{margin:4px 0 4px 10px}
 #login{display:none}
 </style></head><body>
-<header><b>Brenebase</b><span class="dim" id="lights"><span id="adot" class="dot"></span> PC <span id="mdot" class="dot"></span> Model <span id="wdot" class="dot"></span> Worker</span>
+<header><b>Brenebase</b><span class="dim" id="lights" style="cursor:pointer" title="Open the PC tab"><span id="adot" class="dot"></span> PC <span id="mdot" class="dot"></span> Model <span id="wdot" class="dot"></span> Worker</span>
 <nav><button data-tab="send" class="on">Send</button><button data-tab="jobs">Jobs</button><button data-tab="companion" id="cpTab">Companion</button><button data-tab="projects">Projects</button><button data-tab="pc">PC</button><button data-tab="tools">Tools</button></nav></header>
 <div id="tabbar" style="display:flex;gap:6px;overflow-x:auto;padding:8px 14px;border-bottom:1px solid var(--line)"></div>
 <div id="tabNew" class="card" style="display:none;max-width:720px;margin:8px auto"><div class="row" style="margin:0"><input id="tnName" placeholder="Tab name" style="flex:1;min-width:120px;padding:8px;border-radius:8px;border:1px solid var(--line);background:#0f1116;color:var(--text)"><select id="tnProj"></select><button class="go" id="tnAdd">Add tab</button><button class="sm" id="tnX">Cancel</button></div><div class="dim">Pick a project to tie everything in this tab to it, or leave it blank for a plain conversation.</div></div>
@@ -174,7 +174,7 @@ function jobCard(j) {
   const raw = ['claude-code', 'merge'].includes(j.backend) ? r.text : '';
   const output = j.live || raw || (r.text && j.status === 'failed') || r.diff ? `<details${j.status === 'running' ? ' open' : ''}><summary class="dim">Output${j.status === 'running' ? ' (live)' : ''}</summary><pre>${esc([raw || j.live, r.diff].filter(Boolean).join('\n\n') || r.text)}</pre></details>` : '';
   const shut = isShut(j);
-  return `<div class="card" id="job_${j.id}"><div class="row jhead" style="margin:0;cursor:pointer" onclick="toggleJob('${j.id}', event)"><span class="dim jarrow">${shut ? '&#9656;' : '&#9662;'}</span><b>${esc(j.label)}</b>${j.area ? `<span class="tag">${esc(j.area)}</span>` : ''}<span class="tag">${esc(j.runsOn)}</span><span class="st-${j.status}">${j.status}</span></div>
+  return `<div class="card" id="job_${j.id}"><div class="row jhead" style="margin:0;cursor:pointer" onclick="toggleJob('${j.id}', event)"><b><span class="dim jarrow">${shut ? '&#9656;' : '&#9662;'}</span> ${esc(j.label)}</b>${j.area ? `<span class="tag">${esc(j.area)}</span>` : ''}<span class="tag">${esc(j.runsOn)}</span><span class="st-${j.status}">${j.status}</span></div>
   <div class="dim">${esc((j.text || '').slice(0, 160))}</div>
   <div class="jbody"${shut ? ' style="display:none"' : ''}>
   ${statusLine}${partsLine}
@@ -424,6 +424,8 @@ async function pc(quiet) {
 }
 window.pcDo = async (a, b) => { b.disabled = true; b.textContent = '...'; const r = await api('/api/pc/do', { action: a }); $('pcOut').style.display = ''; $('pcOut').textContent = `${a} (${r.via || ''}): ${r.ok ? 'ok' : 'not done'}\n${r.note || ''}`; await pc(); };
 setInterval(() => pc(true).catch(() => {}), 15000);
+/* tapping the lights opens the PC tab, where the worker's own log is */
+$('lights').onclick = () => document.querySelector('nav button[data-tab=pc]').click();
 
 window.speak = async (id, b) => { b.disabled = true; b.textContent = 'Voice on the PC...'; const r = await api(`/api/jobs/${id}/speak`, {}); if (r.error) { b.textContent = r.error; return; } const t = setInterval(async () => { const d = await api('/api/jobs'); const j = d.jobs.find(x => x.id === id); if (j && j.result && j.result.audio) { clearInterval(t); jobs(); const a = new Audio(j.result.audio); a.play().catch(() => {}); } }, 3000); setTimeout(() => clearInterval(t), 180000); };
 window.restyle = async (id, style) => { const k = await api(`/api/jobs/${id}/restyle`, { style }); $('last').innerHTML = jobCard(k); jobs(); };

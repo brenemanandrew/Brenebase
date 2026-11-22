@@ -42,3 +42,5 @@ title: Worker stays online during long jobs, runs jobs side by side
 - Jobs tab grouped into In progress, Error and Done, with counts; each group folds by tapping its heading
 - Job cards fold by tapping their header; Done cards start folded; open or closed is remembered on the phone
 - Tested in headless Chromium: groups render, a card folds on tap and stays folded through the 5 second refresh, a group folds; no page errors
+- A PC job the worker no longer holds (worker restarted or replaced) is failed after 10 quiet minutes with "Lost track of this job on the PC", so Retry shows. Heartbeat now sends the ids of the jobs it holds. Not tested with a real 10 minute wait
+- Fold arrow sits inline with the job title; tapping the PC/Model/Worker lights opens the PC tab

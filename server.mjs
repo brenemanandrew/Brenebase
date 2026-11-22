@@ -302,7 +302,7 @@ http.createServer(async (req, res) => {
     }
 
     /* ---- live progress from the PC worker ---- */
-    if (p === '/api/worker/progress' && req.method === 'POST') { if (!isWorker(req)) return send(res, 401, {}); worker.seen = Date.now(); const b = await body(req); if (Array.isArray(b.busy)) worker.busy = b.busy.map(String).slice(0, 10); const j = L.get(b.id); if (j) { j.step = String(b.step || '').slice(0, 120); j.stepAt = Date.now(); j.live = String(b.log || '').slice(-6000); if (!j.startedAt) j.startedAt = Date.now(); } return send(res, 200, { ok: true }); }
+    if (p === '/api/worker/progress' && req.method === 'POST') { if (!isWorker(req)) return send(res, 401, {}); worker.seen = Date.now(); const b = await body(req); if (Array.isArray(b.busy)) { worker.busy = b.busy.map(String).slice(0, 10); worker.busyIds = (b.busyIds || []).map(String); worker.busyAt = Date.now(); } const j = L.get(b.id); if (j) { j.step = String(b.step || '').slice(0, 120); j.stepAt = Date.now(); j.live = String(b.log || '').slice(-6000); if (!j.startedAt) j.startedAt = Date.now(); } return send(res, 200, { ok: true }); }
 
     /* ---- the PC worker ---- */
     if (p.startsWith('/api/worker/')) {
@@ -425,6 +425,8 @@ http.createServer(async (req, res) => {
     if (p === '/api/split/plan' && req.method === 'POST') { const b = await body(req); const pl = b.plan || P.plan(b.text); if (b.add) P.addSlot(pl, b.add); return send(res, 200, { plan: pl, brief: P.codeBrief(pl, { id: 'NEW', repo: b.repo }), leaks: P.leaks(pl), types: Object.keys(P.SLOT_TYPES) }); }
     if (p === '/api/split/run' && req.method === 'POST') { const b = await body(req); if (!b.plan || !b.plan.mechanics.length) return send(res, 400, { error: 'nothing for the code part to build' }); return send(res, 200, startSplit(b)); }
     if (p === '/api/jobs' && req.method === 'GET') { const tf = u.searchParams.get('thread'); const NEED = { 'claude-code': 'Claude Code is not installed or not signed in on the PC (npm i -g @anthropic-ai/claude-code, then run claude once to sign in)', 'blender': 'Blender is not found on the PC (set BLENDER to blender.exe)', tts: 'the voice pack is not found on the PC (run start-wizra.ps1 once)', 'pc-model': 'the model is not loaded (PC tab: Load)' };
+      /* a PC job the worker no longer has (it was restarted or replaced) would say "running" forever: after 10 quiet minutes, fail it so Retry shows */
+      for (const j of L.list(200)) if (j.status === 'running' && j.runsOn === 'pc' && Date.now() - (j.stepAt || j.startedAt || j.at) > 600000 && !(worker.busyAt && Date.now() - worker.busyAt < 60000 && (worker.busyIds || []).includes(j.id))) afterChange(L.update(j.id, { status: 'failed', error: 'Lost track of this job on the PC: the worker was restarted or replaced while it ran. Tap Retry.' }, 'lost on the PC'));
       for (const j of L.list(200)) if (j.status === 'queued' && workerOnline() && PC_BACKENDS.includes(j.backend) && !worker.can.includes(j.backend)) j.stuck = `Waiting: ${NEED[j.backend] || 'this PC cannot do ' + j.backend}.`; else delete j.stuck; return send(res, 200, { jobs: L.list(200).filter(j => !j.quiet && (!tf || j.thread === tf || (j.parent && (L.get(j.parent) || {}).thread === tf))).slice(0, 80).map(dress), worker: { online: workerOnline(), can: worker.can } }); }
     if (p === '/api/jobs' && req.method === 'POST') { const b = await body(req); let j = makeJob(b); if (j.status === 'ready') j = await start(j); return send(res, 200, j); }
     const fm = p.match(/^\/api\/jobs\/([a-f0-9]+)\/fill$/);
