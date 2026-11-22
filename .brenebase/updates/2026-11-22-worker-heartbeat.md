@@ -36,3 +36,6 @@ title: Worker stays online during long jobs, runs jobs side by side
 ## Tested (later the same day)
 - Worker went green on Andrew's PC after the deploy and Update now (screenshot)
 - 3 new checks in test.mjs for the split fix; node test.mjs 51/51
+- Companion: messages sent to the PC model are cleaned so user and reply take turns (unanswered messages in a row are joined). Fixes LM Studio "Unable to generate parser for this template" 400. If a template still refuses, it retries with the instructions folded into the first message
+- Studio pictures: a job counts as finished on "finished", "complete", "success" and similar, or when it has files and its note says saved. Fixes the lighthouse job staying "Working" after Studio saved the image
+- Tested with a fake strict template and a fake Studio that answers "finished" and "1/1 image(s) saved": both now finish; 51/51 checks

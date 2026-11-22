@@ -99,8 +99,21 @@ async function progress(j, step, text, force) {
 }
 async function doJob(j) { await progress(j, 'started on the PC', '', true);
   if (j.backend === 'pc-model') {
-    const r = await fetch(`${BIONIC}/v1/chat/completions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'system', content: j.system || '' }, ...(j.messages && j.messages.length ? j.messages : [{ role: 'user', content: j.text }])], temperature: 0.8, max_tokens: j.maxTokens || 800 }), signal: AbortSignal.timeout(300000) });
-    const d = await r.json(); return { ok: r.ok, text: d.choices?.[0]?.message?.content || '', error: r.ok ? undefined : JSON.stringify(d).slice(0, 300) };
+    /* many local chat templates (Mistral Nemo and its fine-tunes) refuse anything but user/assistant taking turns,
+       starting and ending with the user: unanswered messages in a row are joined, a leading reply is dropped */
+    const turns = [];
+    for (const m of (j.messages && j.messages.length ? j.messages : [{ role: 'user', content: j.text }])) {
+      const c = String(m.content || '').trim(); if (!c) continue;
+      const role = m.role === 'assistant' ? 'assistant' : 'user', l = turns[turns.length - 1];
+      if (l && l.role === role) l.content += '\n\n' + c; else turns.push({ role, content: c });
+    }
+    while (turns.length && turns[0].role !== 'user') turns.shift();
+    if (!turns.length || turns[turns.length - 1].role !== 'user') turns.push({ role: 'user', content: j.text || '...' });
+    const ask = async msgs => { const r = await fetch(`${BIONIC}/v1/chat/completions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ messages: msgs, temperature: 0.8, max_tokens: j.maxTokens || 800 }), signal: AbortSignal.timeout(300000) }); let d; try { d = await r.json(); } catch { d = {}; } return { r, d }; };
+    let { r, d } = await ask(j.system ? [{ role: 'system', content: j.system }, ...turns] : turns);
+    /* a template that takes no system role: put the instructions in front of the first message instead */
+    if (!r.ok && j.system && /template|parser|role/i.test(JSON.stringify(d))) ({ r, d } = await ask([{ role: 'user', content: j.system + '\n\n' + turns[0].content }, ...turns.slice(1)]));
+    return { ok: r.ok, text: d.choices?.[0]?.message?.content || '', error: r.ok ? undefined : JSON.stringify(d).slice(0, 300) };
   }
   if (j.backend === 'claude-code') {
     const repo = path.join(REPOS, (j.repo || 'brenemanandrew/Brenelandtest').split('/').pop());
@@ -213,10 +226,11 @@ async function doJob(j) { await progress(j, 'started on the PC', '', true);
       const job = list.find(x => id ? String(x.id) === id : !before.includes(String(x.id)) && x.kind === 'image');
       if (!job) continue; id = String(job.id);
       await progress(j, `Brenai Studio: ${job.note || job.status}`, (job.log || []).slice(-1)[0] || '');
-      if (job.status === 'failed' || job.status === 'error') return { ok: false, error: `Brenai Studio could not make it: ${job.note || job.error || 'no reason given'}` };
-      if (job.status === 'done') {
+      if (/^(failed|error|cancelled|canceled)$/i.test(String(job.status))) return { ok: false, error: `Brenai Studio could not make it: ${job.note || job.error || 'no reason given'}` };
+      const files = job.files || job.outputs || job.images || [];
+      if (/^(done|finished|complete|completed|success|succeeded|ok)$/i.test(String(job.status)) || (files.length && /saved|finished|done/i.test(String(job.note || '')))) {
         const images = [];
-        for (const f of (job.files || []).slice(0, 8)) { try { const b = Buffer.from(await (await fetch(base + f, { signal: AbortSignal.timeout(60000) })).arrayBuffer()); images.push({ name: path.basename(f), data: b.toString('base64') }); } catch { } }
+        for (const f of files.map(x => typeof x === 'string' ? x : x.url || x.path || x.file).filter(Boolean).slice(0, 8)) { try { const b = /^[A-Za-z]:[\\/]/.test(f) && fs.existsSync(f) ? fs.readFileSync(f) : Buffer.from(await (await fetch(/^https?:/.test(f) ? f : base + (f.startsWith('/') ? '' : '/') + f, { signal: AbortSignal.timeout(60000) })).arrayBuffer()); images.push({ name: path.basename(f), data: b.toString('base64') }); } catch { } }
         return { ok: images.length > 0, text: `${images.length} picture(s) from Brenai Studio (${job.note || 'done'}). Saved on the PC in Studio's outputs folder too.`, result: { images64: images }, error: images.length ? undefined : 'Studio finished but the files could not be fetched' };
       }
     }
