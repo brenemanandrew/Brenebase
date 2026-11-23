@@ -344,7 +344,7 @@
  "last_update": "2026-11-21 (v319)",
  "sources": [
   {
-   "kind": "github",
+   "kind": "pc-git",
    "repo": "brenemanandrew/Brenelandtest",
    "path": "CLAUDE.md"
   },

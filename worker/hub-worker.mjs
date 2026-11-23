@@ -415,6 +415,14 @@ async function doJob(j) { await progress(j, 'started on the PC', '', true);
     const files = fs.readdirSync(d).filter(n => n.endsWith('.md')).map(n => ({ name: n, mtime: fs.statSync(path.join(d, n)).mtimeMs })).sort((a, b) => b.mtime - a.mtime).slice(0, 50).map(f => ({ ...f, text: fs.readFileSync(path.join(d, f.name), 'utf8').slice(0, 50000) }));
     return { ok: true, result: { files } };
   }
+  if (j.backend === 'read' && j.source && j.source.kind === 'pc-git') {
+    const repo = repoDir(j.source.repo);
+    if (!fs.existsSync(path.join(repo, '.git'))) { fs.mkdirSync(path.dirname(repo), { recursive: true }); const c = await run('git', ['clone', '--no-checkout', `https://github.com/${j.source.repo}.git`, repo], path.dirname(repo)); if (c.code) return { ok: false, error: `Could not clone ${j.source.repo}: ${(c.err || c.out).slice(-200)}` }; }
+    await run('git', ['fetch', 'origin'], repo);
+    const head = (await run('git', ['rev-parse', '--verify', 'origin/main'], repo)).code === 0 ? 'origin/main' : (await run('git', ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], repo)).out.trim() || 'origin/master';
+    const r = await run('git', ['show', `${head}:${j.source.path}`], repo);
+    return r.code ? { ok: false, error: `${j.source.path} is not in ${j.source.repo} ${head}: ${(r.err || '').slice(-200)}` } : { ok: true, text: r.out.length >= 20000 ? (await new Promise(ok => { const p = spawn('git', ['show', `${head}:${j.source.path}`], { cwd: repo }); let o = ''; p.stdout.on('data', d => o += d); p.on('close', () => ok(o)); })).slice(0, 400000) : r.out };
+  }
   if (j.backend === 'read') {
     let f = path.resolve(j.readPath || j.source.path);
     if (!READ_ROOTS.some(r => f.toLowerCase().startsWith(r.toLowerCase() + path.sep) || f.toLowerCase() === r.toLowerCase()) && !/\\interface\\addons\\/i.test(f)) return { ok: false, error: `${f} is outside READ_ROOTS` };

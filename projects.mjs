@@ -98,7 +98,8 @@ export async function sync(onlyId) {
   for (const c of cards()) {
     if (onlyId && c.id !== onlyId) continue;
     for (const s of c.sources || []) {
-      if (s.kind === 'pc-file') { pcJobs.push({ project: c.id, source: s }); continue; }
+      /* pc-file: a file on the PC; pc-git: a file in a repo's latest main, read by the PC's own git (no GitHub token on Brenebase needed) */
+      if (s.kind === 'pc-file' || s.kind === 'pc-git') { pcJobs.push({ project: c.id, source: s }); continue; }
       try { const t = await fetchSource(s); const added = record(c.id, s, t); report.push(`${c.id}: ${s.path || s.repo} ${added.length ? added.length + ' new' : 'up to date'}`); }
       catch (e) { recordError(c.id, s, e.message || e); report.push(`${c.id}: ${s.path || s.repo} FAILED ${e.message || e}`); }
     }

@@ -142,27 +142,27 @@
  ],
  "sources": [
   {
-   "kind": "github",
+   "kind": "pc-git",
    "repo": "brenemanandrew/Brenelandtest",
    "path": "brenai/MASTERFILE.md"
   },
   {
-   "kind": "github",
+   "kind": "pc-git",
    "repo": "brenemanandrew/Brenelandtest",
    "path": "brenai/HANDOFF.md"
   },
   {
-   "kind": "github",
+   "kind": "pc-git",
    "repo": "brenemanandrew/Brenelandtest",
    "path": "brenai/WISHLIST.md"
   },
   {
-   "kind": "github",
+   "kind": "pc-git",
    "repo": "brenemanandrew/Brenelandtest",
    "path": "brenai/README.md"
   },
   {
-   "kind": "github",
+   "kind": "pc-git",
    "repo": "brenemanandrew/Brenelandtest",
    "path": "brenai/AGENTS.md"
   }
