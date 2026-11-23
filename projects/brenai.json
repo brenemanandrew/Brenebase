@@ -160,6 +160,11 @@
    "kind": "github",
    "repo": "brenemanandrew/Brenelandtest",
    "path": "brenai/README.md"
+  },
+  {
+   "kind": "github",
+   "repo": "brenemanandrew/Brenelandtest",
+   "path": "brenai/AGENTS.md"
   }
  ],
  "repo": "brenemanandrew/Brenelandtest",

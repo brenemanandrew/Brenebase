@@ -101,6 +101,12 @@ export async function check(task, { claude, askPc, local } = {}) {
   const lines = skills.map(s => { const p = (picks || []).find(x => x && x.name === s.name); return p ? { name: s.name, used: !!p.used, reason: String(p.reason || '').slice(0, 160) || (p.used ? 'applies' : 'does not apply') } : { ...rules.find(x => x.name === s.name), ...(picks ? { reason: rules.find(x => x.name === s.name).reason + ' (rules; the model left it out)' } : {}) }; });
   return { by, lines, used: lines.filter(l => l.used).map(l => l.name), errors };
 }
+/* skills a project's jobs always follow, whatever the task (asked for by that project's own session) */
+export const PROJECT_SKILLS = { brenai: ['brenai-report'] };
+export function withProjectSkills(c, project) {
+  for (const n of PROJECT_SKILLS[project] || []) { if (!all().skills.some(s => s.name === n) || c.used.includes(n)) continue; const l = c.lines.find(x => x.name === n); if (l) Object.assign(l, { used: true, reason: `always used on ${project} jobs` }); else c.lines.push({ name: n, used: true, reason: `always used on ${project} jobs` }); c.used.push(n); }
+  return c;
+}
 export const logLines = c => c.lines.map(l => `skill ${l.name}: ${l.used ? 'used' : 'not used'}, ${l.reason}`);
 
 /* what the worker (Claude Code, the PC model, Claude) is given: the picked skills in full and the rules for using them */

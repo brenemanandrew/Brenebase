@@ -216,6 +216,7 @@ async function skillCheck(j) {
   if (!SKILL_BACKENDS.includes(j.backend) || j.quiet || j.companion || j.skillCheck) return j.skillCheck || null;
   const pj = j.project && PJ.card(j.project), local = /\[\[local\]\]/i.test(j.text || '') || !!(pj && pj.private);
   const c = await SK.check(String(j.text || '').slice(0, 4000), { claude: null, local })   /* rules plus the planner's picks; no Claude */.catch(e => ({ by: 'none', lines: [], used: [], errors: [`skill check failed: ${e.message || e}`] }));
+  SK.withProjectSkills(c, j.project);
   /* skills the planner picked for this part stay picked, even if this check would have missed them */
   for (const n of j.plannedSkills || []) { if (c.used.includes(n)) continue; const l = c.lines.find(x => x.name === n); if (l) Object.assign(l, { used: true, reason: 'picked by the planner when the jobs were worked out' }); else c.lines.push({ name: n, used: true, reason: 'picked by the planner when the jobs were worked out' }); c.used.push(n); }
   L.update(j.id, { skillCheck: c }, `skills checked (${c.by}): ${c.used.length ? 'using ' + c.used.join(', ') : 'none apply'}`);
