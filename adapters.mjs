@@ -4,13 +4,14 @@
      claude-code  Claude Code on the PC (`claude -p` in the repo folder, on a branch) (PC worker)
      pc-model     the PC model through Bionic, same as the Wizra bridge             (PC worker)
      blender      headless Blender on the PC (worker/blender_ops.py)                (PC worker)
+     blender-3d   a pasted picture to a 3D model in the open Blender (add-on listener on 127.0.0.1:8082, Hunyuan3D on 8081)  (PC worker)
      pc-run       a known script on the PC (render checker, clip converter, deploy) (PC worker)
      meshy        Meshy API. Spends credits, so it always waits for an OK           (cloud, needs MESHY_API_KEY)
      link         opens one of Andrew's pages (mocap, kiosk)                        (browser)
    Jobs for the PC sit in the ledger as "queued" until worker/hub-worker.mjs picks them up. */
 import { split } from './split.mjs';
 
-export const PC_BACKENDS = ['claude-code', 'pc-model', 'blender', 'pc-run', 'merge', 'read', 'readdir', 'tts', 'probe', 'studio', 'studio-image', 'engines', 'sd-image', 'engine-help', 'skills-list', 'push-branch'];
+export const PC_BACKENDS = ['claude-code', 'pc-model', 'blender', 'pc-run', 'merge', 'read', 'readdir', 'tts', 'probe', 'studio', 'studio-image', 'engines', 'sd-image', 'engine-help', 'skills-list', 'push-branch', 'blender-3d'];
 export const SPENDS = ['meshy'];
 
 /* How each tool + mode is told to behave. The mode is the whole point: same tool, different handling. */

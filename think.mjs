@@ -40,6 +40,7 @@ Rules
 - The coder (Claude Code) gets only the code work: rules, systems, what to load from files. Never the art descriptions, story, lore, names or private details. Refer to art and story as assets it loads (for example "load the tavern model from assets/tavern.glb").
 - Story, lore, dialogue and names go to the companion or the PC model side, not the coder.
 - If a part uses another part's result (a plan before the build, a story before the dialogue code, a picture before a 3D model), list that part's number in needs. Parts with no needs run at once.
+- A pasted or attached picture he wants made into a 3D model is ONE make3d/blender3d part (free, on his PC, into the open Blender), unless he names Meshy (then make3d/generate). It is not an Images part.
 - Do not invent work he did not ask for. Do not add review or test parts unless he asked.
 - If the request is a feeling, a vent or chat, one companion part.
 - Use only these tools and modes (tool/mode):
@@ -73,7 +74,9 @@ export async function think(text, { claude, askPc, project, tags } = {}) {
   const withSkills = p => {
     for (const part of p.parts) {
       const rules = SK.ruleCheck(part.text, all.skills).filter(x => x.used).map(x => x.name); part.skills = [...new Set([...(part.skills || []), ...rules])];
-      for (const sk of part.skills) { const st = STEER[sk]; if (!st || part.tool === st[0]) continue; const r = resolve(st[0], st[1] || (st[0] === 'image' ? (/anime|manga|cel/i.test(part.text) ? 'anime' : 'realistic') : st[0] === 'doll' ? (/new doll/i.test(part.text) ? 'new' : 'edit') : undefined)); if (r) { Object.assign(part, { tool: r.tool, mode: r.mode, label: r.label, why: `${part.why ? part.why + '; ' : ''}skill ${sk} says ${r.label}` }); break; } }
+      /* picture to 3D in Blender: the picture is what goes in, not what comes out, so a picture skill does not move it to Images */
+      const keep = part.tool === 'make3d' && part.mode === 'blender3d';
+      for (const sk of keep ? [] : part.skills) { const st = STEER[sk]; if (!st || part.tool === st[0]) continue; const r = resolve(st[0], st[1] || (st[0] === 'image' ? (/anime|manga|cel/i.test(part.text) ? 'anime' : 'realistic') : st[0] === 'doll' ? (/new doll/i.test(part.text) ? 'new' : 'edit') : undefined)); if (r) { Object.assign(part, { tool: r.tool, mode: r.mode, label: r.label, why: `${part.why ? part.why + '; ' : ''}skill ${sk} says ${r.label}` }); break; } }
       if (part.skills.includes('kaizen-a3')) part.private = true;
     }
     return { ...p, skillErrors: all.errors, skillCount: all.skills.length };

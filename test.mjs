@@ -6,7 +6,12 @@ const CASES = [
   ['Plan a kaizen event for the receiving dock, too much walking between stations', 'expert:kaizen'],
   ['Do a 5 whys on why the cross training roster keeps getting out of date', 'expert:kaizen'],
   ['Make a cel shaded oak tree model for Breneland', 'make3d:generate'],
-  ['Turn this photo of my dog into a 3d model', 'make3d:generate'],
+  ['Turn this photo of my dog into a 3d model', 'make3d:blender3d'],
+  ['Turn this picture into a 3D model', 'make3d:blender3d'],
+  ['make a 3d model from this picture', 'make3d:blender3d'],
+  ['image to 3d please', 'make3d:blender3d'],
+  ['Use meshy to turn this photo of my dog into a 3d model', 'make3d:generate'],
+  ['Decimate the model from this picture job, dog.glb, to 10k tris', 'make3d:process'],
   ['Retexture the tavern sign so it looks cel shaded', 'make3d:retexture'],
   ['Decimate wizra_hoodie.glb to about 20k tris', 'make3d:process'],
   ['Auto rig the new goblin model', 'make3d:rig'],
@@ -96,6 +101,10 @@ const UPx = await import('./updates.mjs');
 UPx.add('---\nproject: brenebase\n---\n## Broken\n- The Claude key on Brenebase is rejected (401)', { key: 'fx1' });
 UPx.add('---\nproject: brenebase\n---\n## Fixed\n- Claude key on Brenebase works now', { key: 'fx2' });
 SPLIT.push(['## Fixed clears the matching broken note', !UPx.list('brenebase').some(u => u.broken.some(b => /Claude key/.test(b)))]);
+SPLIT.push(
+  ['picture to 3D: a 3D-from-picture part goes to Blender on the PC', (await think('turn this picture into a 3D model', {})).parts.some(p => p.tool === 'make3d' && p.mode === 'blender3d')],
+  ['picture to 3D: name, detail and colours read from the request', (a => a.name === 'my dog' || a.name === 'dog' ? a.detail === 'draft' && a.texture === false : false)((await import('./server.mjs')).blender3dArgs({ text: 'turn this photo of my dog into a quick 3d model, shape only' }))],
+);
 let sOk = 0; for (const [n, ok] of SPLIT) { if (ok) sOk++; console.log(`${ok ? 'ok  ' : 'MISS'} split: ${n}`); }
 pass += sOk; const total = CASES.length + SPLIT.length;
 console.log(`\n${pass}/${total} as expected`);

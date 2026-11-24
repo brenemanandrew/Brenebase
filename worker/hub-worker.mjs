@@ -6,12 +6,16 @@
      claude-code  the `claude` command (Claude Code). Runs `claude -p` in the repo folder on a new branch
      blender      Blender, run headless with blender_ops.py
      pc-run       named scripts in PC_SCRIPTS below (render checker, clip converter)
+     blender-3d   a pasted picture to a 3D model in the Blender Andrew has open: the add-on's listener (127.0.0.1:8082) asks the
+                  3D model maker (Hunyuan3D, 127.0.0.1:8081) and brings the model into the scene
 
    Env (setx on Windows)
      HUB_URL           https://<your hub>.fly.dev
      HUB_WORKER_TOKEN  same value as the hub's secret
      BIONIC_URL        default http://127.0.0.1:1234
      BLENDER           path to blender.exe (default: "blender" on PATH)
+     BLENDER_LISTEN    the add-on's listener (default http://127.0.0.1:8082)
+     HUNYUAN_URL       the 3D model maker (default http://127.0.0.1:8081)
      REPOS             folder that holds your repo checkouts (default: %USERPROFILE%\repos)
      READ_ROOTS        folders project notes may be read from, ; separated (default G:\My Drive;F:\Projects;the WoW AddOns folder)
    Run: node hub-worker.mjs */
@@ -49,7 +53,7 @@ if (await bionicUp()) can.push('pc-model');
 const CLAUDE = process.env.CLAUDE || [path.join(os.homedir(), '.local', 'bin', process.platform === 'win32' ? 'claude.exe' : 'claude')].find(f => fs.existsSync(f)) || 'claude';
 if (await found(`"${CLAUDE}"`)) can.push('claude-code');
 if (await found(`"${BLENDER}"`)) can.push('blender');
-can.push('pc-run');
+can.push('pc-run', 'blender-3d');   /* blender-3d checks Blender and the 3D model maker when a job comes, with plain errors */
 if (await found('git')) can.push('merge');
 /* the voice pack: Kokoro, the same model and voices as Wizra's bridge. Uses the copy start-wizra.ps1 already installed in
    %USERPROFILE%\Brenai (or one in the Brenebase folder), so nothing new downloads. Loaded on the first job. */
@@ -198,6 +202,7 @@ async function doJob(j) { await progress(j, 'started on the PC', '', true);
     if (!r.ok && j.system && /template|parser|role/i.test(JSON.stringify(d))) ({ r, d } = await ask([{ role: 'user', content: j.system + '\n\n' + turns[0].content }, ...turns.slice(1)]));
     return { ok: r.ok, text: d.choices?.[0]?.message?.content || '', error: r.ok ? undefined : JSON.stringify(d).slice(0, 300), result: { seen, visionNote } };
   }
+  if (j.backend === 'blender-3d') return blender3d(j);
   if (j.backend === 'claude-code') {
     const repo = repoDir(j.repo);
     /* the repo is not on this PC yet: clone it into REPOS (uses the PC's own git sign-in for private repos) */
@@ -442,6 +447,36 @@ async function doJob(j) { await progress(j, 'started on the PC', '', true);
 }
 
 /* Merge: put each filled slot where the code's manifest says, check it, run the build test, commit on the branch. */
+/* picture to 3D in the open Blender: the add-on's listener takes the job, the 3D model maker on this PC makes it, Blender brings it in.
+   One job at a time in Blender (it queues them); about 36 s shape only, 65 s with colours; it gives up at 15 minutes. */
+const BLENDER_LISTEN = (process.env.BLENDER_LISTEN || 'http://127.0.0.1:8082').replace(/\/$/, '');
+const HUNYUAN = (process.env.HUNYUAN_URL || 'http://127.0.0.1:8081').replace(/\/$/, '');
+async function blender3d(j) {
+  const NO_BLENDER = "Blender is not open, or its 'Take jobs from other tools (Brenebase)' box is off";
+  const NO_MAKER = 'The 3D model maker is off: PC tab, switch to 3D model maker';
+  if (!j.image64) return { ok: false, error: 'Paste or attach a picture' };
+  await progress(j, 'checking Blender is open and taking jobs', '', true);
+  let hello; try { const r = await fetch(BLENDER_LISTEN + '/', { signal: AbortSignal.timeout(5000) }); hello = await r.json(); if (!r.ok || !hello.ok) throw new Error(); } catch { return { ok: false, error: NO_BLENDER }; }
+  /* the 3D model maker needs the whole graphics card: the PC tab's switch puts it in "3d" mode */
+  if (!gpu3d()) return { ok: false, error: NO_MAKER };
+  await progress(j, 'checking the 3D model maker is on', '', true);
+  try { await fetch(HUNYUAN + '/', { signal: AbortSignal.timeout(5000) }); } catch { return { ok: false, error: NO_MAKER }; }   /* any answer, even 404, means it is running */
+  const a = j.blender3d || {};
+  const body = { image_base64: j.image64, detail: a.detail || 'normal', texture: a.texture !== false, ...(a.name ? { name: a.name } : {}) };
+  let id; try { const r = await fetch(BLENDER_LISTEN + '/job', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(60000) }); const d = await r.json().catch(() => ({})); if (!r.ok || !d.id) return { ok: false, error: `Blender did not take the job: ${d.error || 'HTTP ' + r.status}` }; id = d.id; } catch (e) { return { ok: false, error: NO_BLENDER }; }
+  await progress(j, `sent to Blender (${body.detail}, ${body.texture ? 'with colours' : 'shape only'}${hello.busy ? ', waiting behind another job' : ''})`, '', true);
+  const t0 = Date.now(); let misses = 0, last = '';
+  while (Date.now() - t0 < 20 * 60000) {
+    await new Promise(r => setTimeout(r, 3000));
+    let st; try { const r = await fetch(`${BLENDER_LISTEN}/job/${id}`, { signal: AbortSignal.timeout(10000) }); st = await r.json(); if (r.status === 404) return { ok: false, error: 'Blender lost the job (was it closed or restarted?)' }; misses = 0; } catch { if (++misses >= 5) return { ok: false, error: `${NO_BLENDER} (it stopped answering while making the model)` }; continue; }
+    const line = `Blender: ${st.status}${st.text ? ' - ' + st.text : ''}`;
+    await progress(j, line, line !== last ? st.text || '' : '', line !== last); last = line;
+    if (st.status === 'done') { const objs = (st.objects || []).join(', '); return { ok: true, text: `Added to the open Blender scene: ${objs || '(no objects reported)'}`, result: { objects: st.objects || [] } }; }
+    if (st.status === 'error') return { ok: false, error: `Blender could not make it: ${st.text || 'no reason given'}` };
+  }
+  return { ok: false, error: 'No model after 20 minutes. Look at Blender and the 3D model maker window for the reason (often: out of graphics memory).' };
+}
+
 async function merge(j) {
   const repo0 = repoDir(j.repo);
   if (!fs.existsSync(repo0)) return { ok: false, error: `No checkout at ${repo0}: run the code part first (it clones the repo)` };
@@ -499,7 +534,7 @@ let refused = false;
 /* jobs run side by side so a long one (a Studio picture, Claude Code) never blocks the companion's replies.
    Jobs that touch a repo or Blender run one at a time. A heartbeat tells Brenebase the worker is alive while it works. */
 const HEAVY = ['claude-code', 'merge', 'blender', 'pc-run'];
-const GPU = ['sd-image', 'pc-model'];   /* use the graphics card: never two of these at once */
+const GPU = ['sd-image', 'pc-model', 'blender-3d'];   /* use the graphics card: never two of these at once */
 const busy = new Map();
 const MAX = +process.env.WORKER_JOBS || 4;
 setInterval(() => { fetch(`${HUB}/api/worker/progress`, { method: 'POST', headers: H, body: JSON.stringify({ busy: [...busy.values()].map(j => j.label), busyIds: [...busy.keys()] }), signal: AbortSignal.timeout(15000) }).catch(() => { }); }, 10000);

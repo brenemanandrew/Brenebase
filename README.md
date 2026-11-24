@@ -25,7 +25,7 @@ The mode is what changes how the work is handled. Same tool, different job.
 | Planner | think | Claude API | Project plan, Break down, My week, Look back |
 | Professional expert | think | Claude API (or PC, see below) | Kaizen / lean, Project management, Operations (Hubbell), Game design, Art and animation |
 | Companion | think | PC model only | Just talk, Vent, Roleplay, Coach |
-| 3D | make3d | Meshy, Blender on PC, code | Generate, Retexture, Rig, Process (Blender), Breneland fit, Build in code, Check |
+| 3D | make3d | Meshy, Blender on PC, code | Generate, Picture to 3D in Blender, Retexture, Rig, Process (Blender), Breneland fit, Build in code, Check |
 | Motion | motion | Browser, PC | Capture (mocap), Library, Retarget, Hand-made in code |
 | Overtime kiosk | workapp | Browser | Open, Roster, Change kiosk |
 | Ship | ship | PC | Test copy, Deploy (always waits for OK) |
@@ -39,7 +39,8 @@ This is the rule the router follows (`pick3d` and `pickMotion` in `route.mjs`):
 | You want | Goes to | Why |
 |---|---|---|
 | Something new, from words | Meshy text to 3D, preview first | Cheapest way to get a new shape |
-| Something new, from a picture | Meshy image to 3D | Same, from a photo or sketch |
+| Something new, from a pasted picture | Picture to 3D in Blender (your PC): the 3D model maker (Hunyuan3D) makes it, the open Blender brings it in | Free. Needs Blender open with "Take jobs from other tools (Brenebase)" ticked and the PC tab on 3D model maker |
+| Something new, from a picture, with Meshy named | Meshy image to 3D | Same, from a photo or sketch, costs credits |
 | New paint or a cel-shaded look on an existing model | Meshy retexture | Keeps the shape |
 | A humanoid with bones | Meshy auto-rig (Blender if it needs hand fixes) | Gets it ready for Mixamo-style clips |
 | Change a model you already have (decimate, convert, bake, clean) | Blender on your PC, headless | Exact, repeatable, free |

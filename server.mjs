@@ -196,7 +196,7 @@ function makeJob({ text, tool, mode, area, autonomy = 'draft', args = {}, repo, 
   /* a private (work) project's context never goes to the cloud: those jobs move to the PC model */
   if (pj && pj.private && r.backend === 'claude') r = { ...r, backend: 'pc-model', runsOn: 'pc' };
   const job = { text, area: area || (pj && pj.area), autonomy, args, repo: repo || (pj && pj.repo && pj.repo.includes('/') && !pj.repo.includes(' ') ? pj.repo : undefined), target, project: pj ? pj.id : null, thread: th ? th.id : undefined, ...(studioBody ? { studioBody } : {}), ...(sd ? { sd } : {}), ...(pic ? { pic } : {}), ...r };
-  const safe = ['brief', 'claude', 'link', 'copilot', 'doll'].includes(r.backend) || (r.backend === 'pc-model') || (tool === 'image' && ['model', 'realistic', 'anime', 'manga', 'h3'].includes(r.mode));
+  const safe = ['brief', 'claude', 'link', 'copilot', 'doll', 'blender-3d'].includes(r.backend) || (r.backend === 'pc-model') || (tool === 'image' && ['model', 'realistic', 'anime', 'manga', 'h3'].includes(r.mode));
   const mustAsk = r.gate === 'always' || SPENDS.includes(r.backend) || autonomy === 'ask' || (autonomy === 'draft' && !safe);
   const made = L.add({ ...job, status: mustAsk ? 'waiting' : 'ready' });
   if (sd && ['realistic', 'anime'].includes(r.mode) && /realistic|photo/i.test(text) && /anime|manga|cel|toon/i.test(text) && !args.noTwin) {
@@ -211,7 +211,7 @@ function makeJob({ text, tool, mode, area, autonomy = 'draft', args = {}, repo, 
 /* every task checks the skills Brenebase has before it starts (skills.mjs): one log line per skill, the picked ones go
    to whoever does the work in full, the report lists them. Chat with the companion and the PC's own reading jobs are
    not tasks and are not checked. */
-const SKILL_BACKENDS = ['claude-code', 'claude', 'brief', 'copilot', 'pc-model', 'blender', 'pc-run', 'merge', 'meshy', 'sd-image', 'doll'];
+const SKILL_BACKENDS = ['claude-code', 'claude', 'brief', 'copilot', 'pc-model', 'blender', 'blender-3d', 'pc-run', 'merge', 'meshy', 'sd-image', 'doll'];
 async function skillCheck(j) {
   if (!SKILL_BACKENDS.includes(j.backend) || j.quiet || j.companion || j.skillCheck) return j.skillCheck || null;
   const pj = j.project && PJ.card(j.project), local = /\[\[local\]\]/i.test(j.text || '') || !!(pj && pj.private);
@@ -236,8 +236,10 @@ async function start(j) {
     if (j.backend === 'copilot') { const r = await runCopilot(j, j.project && PJ.card(j.project)); return r.relay ? L.update(j.id, { status: 'waiting-answer', result: { text: r.prompt, link: r.link, relay: true } }, 'Ready: copy it into Copilot, paste the answer back') : copilotAnswer(j, r.text, r.via); }
     if (j.backend === 'meshy') { L.update(j.id, { status: 'running' }); const r = await runMeshy(j); return L.update(j.id, { status: 'running', result: r }, `Meshy task ${r.task} started`); }
     if (PC_BACKENDS.includes(j.backend)) {
+      /* picture to 3D in Blender: the pasted picture goes with the job (like pc-model); no picture, nothing to make */
+      if (j.backend === 'blender-3d' && !pb) return L.update(j.id, { status: 'failed', error: 'Paste or attach a picture' }, 'no picture');
       const pj = j.project && PJ.card(j.project);
-      const extra = j.backend === 'claude-code' ? { prompt: brief(j, PJ.context(pj, 'code', j.text)).prompt + (skillText ? '\n\n' + skillText : '') + (j.pic ? `\n\nAndrew attached a picture to this request (not readable from here; ask him for it if the work needs it).` : ''), held: brief(j).held } : j.backend === 'pc-model' ? { ...(pb ? { image64: pb, imageMime: j.pic.mime } : {}), system: systemFor(j.tool, j.mode) + (pj ? '\n\n' + PJ.context(pj, 'local', j.text) : '') + (skillText ? '\n\n' + skillText : ''), ...(j.thread && !j.messages ? { messages: [...TH.history(L.list(200).filter(x => x.id !== j.id), j.thread), { role: 'user', content: j.text }] } : {}) } : {};
+      const extra = j.backend === 'claude-code' ? { prompt: brief(j, PJ.context(pj, 'code', j.text)).prompt + (skillText ? '\n\n' + skillText : '') + (j.pic ? `\n\nAndrew attached a picture to this request (not readable from here; ask him for it if the work needs it).` : ''), held: brief(j).held } : j.backend === 'blender-3d' ? { image64: pb, imageMime: j.pic.mime, blender3d: blender3dArgs(j) } : j.backend === 'pc-model' ? { ...(pb ? { image64: pb, imageMime: j.pic.mime } : {}), system: systemFor(j.tool, j.mode) + (pj ? '\n\n' + PJ.context(pj, 'local', j.text) : '') + (skillText ? '\n\n' + skillText : ''), ...(j.thread && !j.messages ? { messages: [...TH.history(L.list(200).filter(x => x.id !== j.id), j.thread), { role: 'user', content: j.text }] } : {}) } : {};
       const q = L.update(j.id, { status: 'queued', ...extra }, workerOnline() ? 'sent to the PC' : 'waiting for the PC worker; asking the PC agent to start what is needed');
       if (!workerOnline()) PA.jumpstart(['worker', ...(j.backend === 'pc-model' ? ['model'] : [])]).then(n => n.length && L.update(j.id, {}, `Jumpstart: ${n.join('; ')}`)).catch(() => {});
       return q;
@@ -294,6 +296,14 @@ function savePic(dataUrl) {
   const m = typeof dataUrl === 'string' && dataUrl.match(/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/); if (!m) return null;
   fs.mkdirSync(IMG_DIR, { recursive: true }); const f = `in-${crypto.randomBytes(6).toString('hex')}.${m[1] === 'jpeg' ? 'jpg' : m[1]}`;
   fs.writeFileSync(path.join(IMG_DIR, f), Buffer.from(m[2], 'base64')); return { url: `/api/img/${f}`, file: f, mime: `image/${m[1]}` };
+}
+/* what the Blender add-on is asked for: a short object name and the detail and colour words from the request */
+export function blender3dArgs(j) {
+  const t = String(j.text || '').toLowerCase(), a = j.args || {};
+  const name = String(a.name || (t.match(/\b(?:of|from)\s+(?:this|the|my|a)\s+(?:picture|photo|image|sketch|drawing)\s+of\s+(?:a|an|the|my)?\s*([a-z][a-z0-9 _-]{1,30}?)(?:[,.;]|\s+(?:into|in|as|with|and)\b|$)/) || t.match(/\b(?:picture|photo|image|sketch|drawing)\s+of\s+(?:a|an|the|my)?\s*([a-z][a-z0-9 _-]{1,30}?)(?:[,.;]|\s+(?:into|in|as|with|and)\b|$)/) || [])[1] || '').replace(/[^A-Za-z0-9 _-]/g, '').trim().slice(0, 40);
+  const detail = ['draft', 'normal', 'fine'].includes(a.detail) ? a.detail : /\b(draft|quick|rough|fast)\b/.test(t) ? 'draft' : /\b(fine|detailed|high detail|lots of detail|best quality)\b/.test(t) ? 'fine' : 'normal';
+  const texture = a.texture !== undefined ? !!a.texture && a.texture !== 'false' : !/\b(no (?:colou?rs?|textures?|paint)|shape only|without (?:colou?rs?|textures?)|untextured|grey|gray|clay)\b/.test(t);
+  return { ...(name ? { name } : {}), detail, texture };
 }
 const picB64 = pic => { try { return pic && fs.readFileSync(path.join(IMG_DIR, path.basename(pic.file))).toString('base64'); } catch { return null; } };
 
@@ -597,7 +607,7 @@ http.createServer(async (req, res) => {
     if (ph && req.method === 'POST') { const b = await body(req); const pj = PJ.card(ph[1]); if (!pj) return send(res, 404, {}); const text = `Help me solve this in ${pj.name}: ${b.item}`; const r = await route(text, { claude, rulesOnly: true }); const pick = r.pick && r.pick.tool !== 'companion' ? r.pick : { tool: 'expert', mode: pj.area === 'work' ? 'ops' : 'game' }; let j = makeJob({ text, tool: pick.tool, mode: pick.mode, area: pj.area, autonomy: 'draft', project: pj.id, repo: b.repo }); if (j.status === 'ready') j = await start(j); return send(res, 200, j); }
     if (p === '/api/split/plan' && req.method === 'POST') { const b = await body(req); const pl = b.plan || P.plan(b.text); if (b.add) P.addSlot(pl, b.add); return send(res, 200, { plan: pl, brief: P.codeBrief(pl, { id: 'NEW', repo: b.repo }), leaks: P.leaks(pl), types: Object.keys(P.SLOT_TYPES) }); }
     if (p === '/api/split/run' && req.method === 'POST') { const b = await body(req); if (!b.plan || !b.plan.mechanics.length) return send(res, 400, { error: 'nothing for the code part to build' }); return send(res, 200, startSplit(b)); }
-    if (p === '/api/jobs' && req.method === 'GET') { const tf = u.searchParams.get('thread'); const NEED = { 'claude-code': 'Claude Code is not installed or not signed in on the PC (npm i -g @anthropic-ai/claude-code, then run claude once to sign in)', 'blender': 'Blender is not found on the PC (set BLENDER to blender.exe)', tts: 'the voice pack is not found on the PC (run start-wizra.ps1 once)', 'pc-model': 'the model is not loaded (PC tab: Load)' };
+    if (p === '/api/jobs' && req.method === 'GET') { const tf = u.searchParams.get('thread'); const NEED = { 'claude-code': 'Claude Code is not installed or not signed in on the PC (npm i -g @anthropic-ai/claude-code, then run claude once to sign in)', 'blender': 'Blender is not found on the PC (set BLENDER to blender.exe)', 'blender-3d': 'the PC worker is out of date (PC tab: Update)', tts: 'the voice pack is not found on the PC (run start-wizra.ps1 once)', 'pc-model': 'the model is not loaded (PC tab: Load)' };
       /* a PC job the worker no longer has (it was restarted or replaced) would say "running" forever: after 10 quiet minutes, fail it so Retry shows */
       for (const j of L.list(200)) if (j.status === 'running' && j.runsOn === 'pc' && Date.now() - (j.stepAt || j.startedAt || j.at) > 600000 && !(worker.busyAt && Date.now() - worker.busyAt < 60000 && (worker.busyIds || []).includes(j.id))) afterChange(L.update(j.id, { status: 'failed', error: 'Lost track of this job on the PC: the worker was restarted or replaced while it ran. Tap Retry.' }, 'lost on the PC'));
       for (const j of L.list(200)) if (j.status === 'queued' && workerOnline() && PC_BACKENDS.includes(j.backend) && !worker.can.includes(j.backend)) j.stuck = `Waiting: ${NEED[j.backend] || 'this PC cannot do ' + j.backend}.`; else delete j.stuck; return send(res, 200, { jobs: L.list(200).filter(j => !j.quiet && (!tf || j.thread === tf || (j.parent && (L.get(j.parent) || {}).thread === tf))).slice(0, 80).map(dress), worker: { online: workerOnline(), can: worker.can } }); }

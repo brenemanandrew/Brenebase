@@ -13,6 +13,9 @@ export function pick3d(t) {
   const file = /\.(glb|gltf|fbx|obj|vrm|blend)\b/.test(t) || has(t, 'this model') || has(t, 'existing') || has(t, 'my model');
   const pic = has(t, 'picture') || has(t, 'photo') || has(t, 'image') || has(t, 'sketch') || has(t, 'drawing');
   if (['animate', 'animation', 'move', 'moves', 'motion', 'walk', 'dance', 'pose', 'mocap'].some(w => has(t, w))) return null;
+  /* a pasted picture into a 3D model: the 3D model maker on his PC, straight into the open Blender (free), unless Meshy is named */
+  const thisPic = ['this picture', 'this photo', 'this image', 'this sketch', 'this drawing', 'the picture', 'the photo', 'my picture', 'my photo', 'pasted', 'attached'].some(w => has(t, w));
+  if (!has(t, 'meshy') && !file && (['image to 3d', 'picture to 3d', 'photo to 3d'].some(w => has(t, w)) || (pic && (thisPic || has(t, 'blender')) && ['3d', 'model', 'mesh'].some(w => has(t, w))))) return ['blender3d', 'A picture into a 3D model: the 3D model maker on your PC, added to the open Blender scene (free).'];
   if (['check', 'render', 'clipping', 'holes', 'inspect', 'how does it look'].some(w => has(t, w))) return ['check', 'You want to see or measure a model: the render checker does six close views and the percent of problems.'];
   if (['garment', 'clothing', 'outfit', 'shirt', 'pants', 'hairstyle', 'hair style', 'shell'].some(w => has(t, w)) && has(t, 'breneland') || has(t, 'fit to body') || has(t, 'fit it to')) return ['breneland', 'A garment or hair for the character builder: the Breneland fit pipeline in Blender.'];
   const making = ['make a', 'make an', 'generate', 'new model', 'create a', 'build a', 'model of', 'i need a'].some(w => has(t, w)) && !file;
