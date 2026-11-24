@@ -20,3 +20,6 @@ title: PC tab: graphics card switch (Wizra or 3D model maker), plainer layout
 
 ## Not tested
 - The real Hunyuan3D server and LM Studio on Andrew's PC (Windows taskkill, the .bat through cmd, the 10 GB first start)
+
+## Open
+- Picture-to-3D jobs into Blender on the PC (asked by Andrew): not started; full plan in HANDOFF.md at the repo root
