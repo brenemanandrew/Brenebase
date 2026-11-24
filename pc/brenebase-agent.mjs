@@ -32,6 +32,7 @@ import path from 'path';
 import os from 'os';
 import fs from 'fs';
 import crypto from 'crypto';
+import net from 'net';
 
 const HOME = os.homedir();
 const HERE = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
@@ -45,7 +46,14 @@ const CTX = process.env.MODEL_CONTEXT || process.env.WIZRA_CONTEXT || '16384';  
 const BASE = process.env.BRENEBASE_DIR || path.dirname(HERE);
 if (!KEY) { console.log('Set HUB_WORKER_TOKEN first (the PC key).'); process.exit(1); }
 
+/* Hunyuan3D (the 3D model maker): a local server that needs the whole graphics card, so it and Wizra's model take turns */
+const HUNYUAN_PORT = +process.env.HUNYUAN_PORT || 8081;
+const MODE_FILE = path.join(HOME, 'Brenebase', 'gpu-mode.txt');   /* "wizra" or "3d": the worker reads it too */
+const gpuMode = () => { try { return fs.readFileSync(MODE_FILE, 'utf8').trim() || 'wizra'; } catch { return 'wizra'; } };
+const setMode = m => { try { fs.mkdirSync(path.dirname(MODE_FILE), { recursive: true }); fs.writeFileSync(MODE_FILE, m); } catch { } };
+const portUp = port => new Promise(ok => { const c = net.connect({ host: '127.0.0.1', port }); const t = setTimeout(() => { c.destroy(); ok(false); }, 1500); c.on('connect', () => { clearTimeout(t); c.destroy(); ok(true); }); c.on('error', () => { clearTimeout(t); ok(false); }); });
 const HELPERS = {
+  hunyuan: { label: '3D model maker (Hunyuan3D)', file: process.env.HUNYUAN_BAT || 'F:\\Projects\\Hunyuan3D\\start_hunyuan3d.bat', port: HUNYUAN_PORT, manual: true },
   wizra: { label: 'Wizra bridge', file: process.env.WIZRA_BRIDGE || path.join(HOME, 'Brenai', 'wizra-bridge.mjs') },
   town: { label: 'Town bridge (Breneland townsfolk)', file: process.env.TOWN_BRIDGE || '' },
   worker: { label: 'Brenebase worker', file: path.join(BASE, 'worker', 'hub-worker.mjs'), env: { HUB_URL: HUB } },
@@ -77,14 +85,18 @@ function startHelper(name) {
   if (alive(running[name])) return `${h.label} already running`;
   /* a worker left running by an earlier copy of the agent is not ours and runs old code: stop it first (Windows) */
   if (name === 'worker' && process.platform === 'win32') { try { spawnSync('powershell', ['-NoProfile', '-Command', "Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | Where-Object { $_.CommandLine -like '*hub-worker.mjs*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"], { windowsHide: true, timeout: 15000 }); } catch { } }
-  const p = spawn(process.execPath, [h.file], { cwd: path.dirname(h.file), env: { ...process.env, ...(h.env || {}) }, windowsHide: true });
+  const bat = /\.(bat|cmd)$/i.test(h.file);
+  const p = bat ? spawn('cmd.exe', ['/c', h.file], { cwd: path.dirname(h.file), env: { ...process.env, ...(h.env || {}) }, windowsHide: true }) : spawn(process.execPath, [h.file], { cwd: path.dirname(h.file), env: { ...process.env, ...(h.env || {}) }, windowsHide: true });
+  p.startedAt = Date.now();
   p.log = []; const keep = d => { p.log.push(...String(d).split('\n').filter(Boolean)); p.log = p.log.slice(-60); };
   p.stdout.on('data', keep); p.stderr.on('data', keep); p.on('exit', (c, sig) => { p.ended = true; keep(`(stopped, code ${c}${sig ? ', ' + sig : ''})`); });
   running[name] = p; return `${h.label} started`;
 }
 function stopHelper(name) {
   const p = running[name]; if (!alive(p)) return `${(HELPERS[name] || {}).label || name} was not running`;
-  p.kill(); return `${HELPERS[name].label} stopped`;
+  p.stopped = true;
+  if (process.platform === 'win32') { try { spawnSync('taskkill', ['/pid', String(p.pid), '/T', '/F'], { windowsHide: true }); } catch { p.kill(); } } else p.kill();
+  return `${HELPERS[name].label} stopped`;
 }
 
 async function status() {
@@ -92,7 +104,13 @@ async function status() {
   return {
     pc: os.hostname(), at: new Date().toISOString(), uptimeMin: Math.round(os.uptime() / 60),
     model: { name: MODEL, context: +CTX, server: m.server, loaded: m.loaded, lmsFound: fs.existsSync(LMS) },
-    helpers: Object.fromEntries(Object.entries(HELPERS).map(([k, h]) => [k, { label: h.label, setUp: !!h.file && fs.existsSync(h.file), running: alive(running[k]), log: (running[k] && running[k].log || []).slice(-8) }])),
+    mode: gpuMode(),
+    helpers: Object.fromEntries(await Promise.all(Object.entries(HELPERS).map(async ([k, h]) => {
+      const p = running[k], run = alive(p), up = h.port ? await portUp(h.port) : run;
+      /* plain states: on, starting (running but not answering yet), failed (stopped with an error), off */
+      const state = p && p.stopped ? (up ? 'starting' : 'off').replace('starting', 'off') : up ? 'on' : run ? 'starting' : p && p.ended && !/code 0\b/.test((p.log || []).slice(-1)[0] || '') ? 'failed' : 'off';
+      return [k, { label: h.label, setUp: !!h.file && fs.existsSync(h.file), running: run || up, state, since: p && p.startedAt, log: (p && p.log || []).slice(-8) }];
+    }))),
     files: Object.fromEntries(['worker/hub-worker.mjs', 'pc/brenebase-agent.mjs'].map(f => { try { return [f, crypto.createHash('sha1').update(fs.readFileSync(path.join(BASE, f))).digest('hex').slice(0, 7)]; } catch { return [f, 'missing']; } })),
   };
 }
@@ -101,6 +119,8 @@ async function act(action) {
   const [verb, name] = String(action || '').split(':');
   if (verb === 'status') return { ok: true, status: await status() };
   if (verb === 'update') { await selfUpdate(); return { ok: true, note: 'Checked Brenebase for newer files; anything new was downloaded and restarted.', status: await status() }; }
+  if ((verb === 'model-start' || (verb === 'start' && name === 'wizra')) && gpuMode() === '3d') return { ok: false, note: 'The 3D model maker has the graphics card. Switch to Wizra first.', status: await status() };
+  if (verb === 'start' && name === 'hunyuan' && gpuMode() !== '3d') return { ok: false, note: 'Use the switch: turning on the 3D model maker takes Wizra offline.', status: await status() };
   if (verb === 'model-start') {
     if (!fs.existsSync(LMS)) return { ok: false, note: `lms not found at ${LMS}` };
     const a = await run(LMS, ['unload', '--all']);
@@ -124,6 +144,19 @@ async function act(action) {
     return { ok: true, note: `Downloading a picture reader with LM Studio (several GB): ${tries[0]}. Tap Vision log to see how far.` };
   }
   if (verb === 'logs' && name === 'vision') return { ok: true, note: (running.vision && running.vision.log || []).join('\n') || 'nothing yet' };
+  /* one switch for the graphics card: Wizra (her model and bridge) or the 3D model maker. Only when Andrew presses it. */
+  if (verb === 'mode' && name === '3d') {
+    const notes = [stopHelper('wizra')];
+    if (fs.existsSync(LMS)) { await run(LMS, ['unload', '--all']); notes.push('Wizra\'s model unloaded'); }
+    setMode('3d'); notes.push(startHelper('hunyuan'), 'The first start downloads about 10 GB and loads for about 5 minutes; it shows "starting" until then.');
+    return { ok: true, note: notes.join('\n'), status: await status() };
+  }
+  if (verb === 'mode' && name === 'wizra') {
+    const notes = [stopHelper('hunyuan')]; setMode('wizra');
+    const m = await act('model-start'); notes.push(m.ok ? 'Wizra\'s model loaded' : 'Wizra\'s model did NOT load: ' + (m.note || '').slice(-200));
+    notes.push(startHelper('wizra'));
+    return { ok: m.ok, note: notes.join('\n'), status: await status() };
+  }
   if (verb === 'model-stop') { await run(LMS, ['unload', '--all']); const r = await run(LMS, ['server', 'stop']); return { ok: true, note: r.out.trim(), status: await status() }; }
   if (verb === 'start') { const note = startHelper(name); return { ok: /started|already running/.test(note), note, status: await status() }; }
   if (verb === 'stop') return { ok: true, note: stopHelper(name), status: await status() };
@@ -132,7 +165,7 @@ async function act(action) {
     const notes = []; const m = await modelState();
     if (!m.loaded.length) notes.push((await act('model-start')).ok ? 'model loaded' : 'model did NOT load');
     else notes.push('model already loaded');
-    for (const k of Object.keys(HELPERS)) notes.push(startHelper(k));
+    for (const k of Object.keys(HELPERS)) if (!HELPERS[k].manual) notes.push(startHelper(k));
     return { ok: true, note: notes.join('\n'), status: await status() };
   }
   if (verb === 'stop-all') { const notes = Object.keys(HELPERS).map(stopHelper); await act('model-stop'); notes.push('model unloaded'); return { ok: true, note: notes.join('\n'), status: await status() }; }
@@ -183,7 +216,7 @@ let beat = 0, refused = false;
 for (;;) {
   try {
     /* every poll carries a fresh status now and then, so the PC tab is right even without Tailscale */
-    const st = beat++ % 6 === 0 ? await status() : null;
+    const st = beat++ % 2 === 0 ? await status() : null;   /* about every 10 s */
     const r = await fetch(`${HUB}/api/agent/next`, { method: 'POST', headers: H, body: JSON.stringify({ status: st }) });
     /* a wrong key: say so once, then check back every 5 minutes instead of repeating it */
     if (r.status === 401) { if (!refused) console.log('PC key refused by Brenebase: the HUB_WORKER_TOKEN on this PC does not match the BRENEBASE_PC_KEY secret. Checking again every 5 minutes.'); refused = true; await new Promise(s => setTimeout(s, 300000)); continue; }

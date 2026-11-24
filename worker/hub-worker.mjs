@@ -139,6 +139,8 @@ function readSkills() {
    Before pictures the LM Studio models are unloaded; afterwards the chat model comes back. LMS can point at lms.exe. */
 const LMS = process.env.LMS || path.join(os.homedir(), '.lmstudio', 'bin', process.platform === 'win32' ? 'lms.exe' : 'lms');
 let gpuSaved = null;
+/* the agent's graphics card switch: in "3d" the 3D model maker has the whole card, so no pictures and no chat model until Andrew switches back */
+const gpu3d = () => { try { return fs.readFileSync(path.join(os.homedir(), 'Brenebase', 'gpu-mode.txt'), 'utf8').trim() === '3d'; } catch { return false; } };
 async function lmModels() { try { return (await (await fetch(`${BIONIC}/api/v0/models`, { signal: AbortSignal.timeout(5000) })).json()).data || []; } catch { return []; } }
 async function freeGpu(j) {
   if (!fs.existsSync(LMS)) return;
@@ -149,10 +151,20 @@ async function freeGpu(j) {
   await run(LMS, ['unload', '--all']);
 }
 async function restoreGpu() {
-  const want = gpuSaved; gpuSaved = null; if (!want || !want.length || !fs.existsSync(LMS)) return;
+  const want = gpuSaved; gpuSaved = null; if (!want || !want.length || !fs.existsSync(LMS) || gpu3d()) return;
   for (const id of want) await run(LMS, ['load', id, '--context-length', String(process.env.MODEL_CONTEXT || 16384), '--gpu', 'max', '-y']);
 }
+const gitLocks = new Map();
+async function readGit(j) {
+    const repo = repoDir(j.source.repo);
+    if (!fs.existsSync(path.join(repo, '.git'))) { fs.mkdirSync(path.dirname(repo), { recursive: true }); const c = await run('git', ['clone', '--no-checkout', `https://github.com/${j.source.repo}.git`, repo], path.dirname(repo)); if (c.code) return { ok: false, error: `Could not clone ${j.source.repo}: ${(c.err || c.out).slice(-200)}` }; }
+    await run('git', ['fetch', 'origin'], repo);
+    const head = (await run('git', ['rev-parse', '--verify', 'origin/main'], repo)).code === 0 ? 'origin/main' : (await run('git', ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], repo)).out.trim() || 'origin/master';
+    const r = await run('git', ['show', `${head}:${j.source.path}`], repo);
+    return r.code ? { ok: false, error: `${j.source.path} is not in ${j.source.repo} ${head}: ${(r.err || '').slice(-200)}` } : { ok: true, text: r.out.length >= 20000 ? (await new Promise(ok => { const p = spawn('git', ['show', `${head}:${j.source.path}`], { cwd: repo }); let o = ''; p.stdout.on('data', d => o += d); p.on('close', () => ok(o)); })).slice(0, 400000) : r.out };
+}
 async function doJob(j) { await progress(j, 'started on the PC', '', true);
+  if (gpu3d() && ['sd-image', 'pc-model'].includes(j.backend)) return { ok: false, error: 'The 3D model maker has the graphics card right now. On the PC tab, switch to Wizra, then Retry.' };
   if (j.backend === 'pc-model') {
     /* many local chat templates (Mistral Nemo and its fine-tunes) refuse anything but user/assistant taking turns,
        starting and ending with the user: unanswered messages in a row are joined, a leading reply is dropped */
@@ -416,15 +428,11 @@ async function doJob(j) { await progress(j, 'started on the PC', '', true);
     return { ok: true, result: { files } };
   }
   if (j.backend === 'read' && j.source && j.source.kind === 'pc-git') {
-    const repo = repoDir(j.source.repo);
-    if (!fs.existsSync(path.join(repo, '.git'))) { fs.mkdirSync(path.dirname(repo), { recursive: true }); const c = await run('git', ['clone', '--no-checkout', `https://github.com/${j.source.repo}.git`, repo], path.dirname(repo)); if (c.code) return { ok: false, error: `Could not clone ${j.source.repo}: ${(c.err || c.out).slice(-200)}` }; }
-    await run('git', ['fetch', 'origin'], repo);
-    const head = (await run('git', ['rev-parse', '--verify', 'origin/main'], repo)).code === 0 ? 'origin/main' : (await run('git', ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], repo)).out.trim() || 'origin/master';
-    const r = await run('git', ['show', `${head}:${j.source.path}`], repo);
-    return r.code ? { ok: false, error: `${j.source.path} is not in ${j.source.repo} ${head}: ${(r.err || '').slice(-200)}` } : { ok: true, text: r.out.length >= 20000 ? (await new Promise(ok => { const p = spawn('git', ['show', `${head}:${j.source.path}`], { cwd: repo }); let o = ''; p.stdout.on('data', d => o += d); p.on('close', () => ok(o)); })).slice(0, 400000) : r.out };
+    /* reads of the same repo take turns: two git fetches (or clones) at once trip over each other's lock files */
+    const key = j.source.repo, prev = gitLocks.get(key) || Promise.resolve(); let release; const mine = new Promise(r => { release = r; }); gitLocks.set(key, prev.then(() => mine));
+    await prev; try { return await readGit(j); } finally { release(); }
   }
-  if (j.backend === 'read') {
-    let f = path.resolve(j.readPath || j.source.path);
+  if (j.backend === 'read') {    let f = path.resolve(j.readPath || j.source.path);
     if (!READ_ROOTS.some(r => f.toLowerCase().startsWith(r.toLowerCase() + path.sep) || f.toLowerCase() === r.toLowerCase()) && !/\\interface\\addons\\/i.test(f)) return { ok: false, error: `${f} is outside READ_ROOTS` };
     /* not where the card says: look for the same file name in the allowed folders and report where it really is */
     if (!fs.existsSync(f)) { const found = findFile(path.basename(f), [path.dirname(f), ...READ_ROOTS, ...wowRoots(f)]); if (!found) return { ok: false, error: `Not found on this PC: ${path.basename(f)} (looked under ${READ_ROOTS.join(', ')})` }; f = found; }

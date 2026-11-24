@@ -6,7 +6,7 @@ import crypto from 'crypto';
 const KEY = process.env.HUB_WORKER_TOKEN || '';
 const PC = process.env.PC_TAILNET_HOST || '';
 const PORT = +process.env.PC_AGENT_PORT || 8765;
-export const ACTIONS = ['update', 'status', 'model-start', 'model-stop', 'start-all', 'stop-all', 'start:wizra', 'stop:wizra', 'start:town', 'stop:town', 'start:worker', 'stop:worker', 'logs:wizra', 'logs:town', 'logs:worker', 'vision-get', 'logs:vision'];
+export const ACTIONS = ['update', 'status', 'model-start', 'model-stop', 'start-all', 'stop-all', 'start:wizra', 'stop:wizra', 'start:town', 'stop:town', 'start:worker', 'stop:worker', 'logs:wizra', 'logs:town', 'logs:worker', 'vision-get', 'logs:vision', 'mode:3d', 'mode:wizra', 'start:hunyuan', 'stop:hunyuan', 'logs:hunyuan'];
 
 const poll = { seen: 0, status: null, statusAt: 0, queue: [], waiting: new Map() };
 export const pollOnline = () => Date.now() - poll.seen < 30000;
@@ -33,7 +33,7 @@ function queued(action, ms) {
   });
 }
 
-export async function call(action, ms = action === 'model-start' || action === 'start-all' ? 180000 : 10000) {
+export async function call(action, ms = action === 'model-start' || action === 'start-all' || action === 'mode:wizra' ? 180000 : 10000) {
   if (!ACTIONS.includes(action)) return { ok: false, note: 'not an allowed action' };
   if (tailnetReady()) {
     try { const r = await direct(action, ms); if (r.status) { poll.status = r.status; poll.statusAt = Date.now(); } return { ...r, via: 'tailscale' }; }
